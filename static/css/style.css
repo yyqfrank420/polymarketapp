@@ -1,0 +1,296 @@
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f8f9fa;
+    color: #1a1a1a;
+    line-height: 1.6;
+}
+
+/* Hero Section */
+.hero-section {
+    background: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
+    padding: 80px 20px 100px;
+    min-height: 65vh;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #e8ebef;
+}
+
+.hero-title {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 12px;
+    letter-spacing: -0.5px;
+}
+
+.hero-subtitle {
+    font-size: 1.25rem;
+    font-weight: 500;
+    color: #5a6670;
+    margin-bottom: 20px;
+}
+
+.hero-description {
+    font-size: 1.1rem;
+    color: #5a6670;
+    margin-bottom: 40px;
+    max-width: 650px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.7;
+}
+
+/* Waitlist Form */
+.waitlist-form-container {
+    max-width: 550px;
+    margin: 0 auto 30px;
+}
+
+.waitlist-form .input-group {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.waitlist-form .form-control {
+    border: 2px solid #e8ebef;
+    border-right: none;
+    padding: 16px 20px;
+    font-size: 1rem;
+    background-color: #ffffff;
+    transition: all 0.3s ease;
+}
+
+.waitlist-form .form-control:focus {
+    border-color: #4169e1;
+    box-shadow: none;
+    background-color: #ffffff;
+}
+
+.waitlist-form .btn-primary {
+    background-color: #4169e1;
+    border: 2px solid #4169e1;
+    padding: 16px 32px;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.waitlist-form .btn-primary:hover {
+    background-color: #3457c7;
+    border-color: #3457c7;
+    transform: translateY(-1px);
+}
+
+.waitlist-form .btn-primary:active {
+    transform: translateY(0);
+}
+
+.waitlist-form .btn-primary:disabled {
+    background-color: #9ca3af;
+    border-color: #9ca3af;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Message Container */
+.message-container {
+    margin-top: 15px;
+    min-height: 30px;
+}
+
+.alert {
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    border: none;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.alert-success {
+    background-color: #d1fae5;
+    color: #065f46;
+}
+
+.alert-danger {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+/* Counter */
+.counter-container {
+    margin-top: 30px;
+}
+
+.counter-text {
+    font-size: 1rem;
+    color: #5a6670;
+    font-weight: 500;
+}
+
+.counter-number {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #4169e1;
+    display: inline-block;
+    min-width: 40px;
+    transition: all 0.3s ease;
+}
+
+.counter-number.updated {
+    animation: pulse 0.5s ease;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.15);
+    }
+}
+
+/* NABC Section */
+.nabc-section {
+    padding: 80px 20px;
+    background-color: #ffffff;
+}
+
+.nabc-card {
+    background: #ffffff;
+    border: 1px solid #e8ebef;
+    border-radius: 12px;
+    padding: 32px 24px;
+    height: 100%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.nabc-card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-4px);
+}
+
+.nabc-icon {
+    font-size: 2.5rem;
+    margin-bottom: 16px;
+}
+
+.nabc-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 12px;
+}
+
+.nabc-text {
+    font-size: 0.95rem;
+    color: #5a6670;
+    line-height: 1.7;
+    margin-bottom: 0;
+}
+
+/* Footer */
+.footer {
+    background-color: #f8f9fa;
+    padding: 40px 20px;
+    border-top: 1px solid #e8ebef;
+}
+
+.footer-text {
+    color: #5a6670;
+    margin: 0;
+    line-height: 1.8;
+}
+
+.footer-text a {
+    color: #4169e1;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.footer-text a:hover {
+    color: #3457c7;
+    text-decoration: underline;
+}
+
+/* Responsive Design */
+@media (max-width: 991px) {
+    .hero-title {
+        font-size: 2.5rem;
+    }
+    
+    .nabc-section {
+        padding: 60px 20px;
+    }
+}
+
+@media (max-width: 767px) {
+    .hero-section {
+        padding: 60px 20px 80px;
+    }
+    
+    .hero-title {
+        font-size: 2rem;
+    }
+    
+    .hero-subtitle {
+        font-size: 1.1rem;
+    }
+    
+    .hero-description {
+        font-size: 1rem;
+    }
+    
+    .waitlist-form .input-group {
+        flex-direction: column;
+    }
+    
+    .waitlist-form .form-control {
+        border-right: 2px solid #e8ebef;
+        border-bottom: none;
+        border-radius: 12px 12px 0 0 !important;
+    }
+    
+    .waitlist-form .btn-primary {
+        border-radius: 0 0 12px 12px !important;
+        border-top: none;
+    }
+    
+    .nabc-card {
+        margin-bottom: 20px;
+    }
+}
+
+@media (max-width: 576px) {
+    .hero-title {
+        font-size: 1.75rem;
+    }
+    
+    .counter-text {
+        font-size: 0.9rem;
+    }
+    
+    .counter-number {
+        font-size: 1.2rem;
+    }
+}
+
