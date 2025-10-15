@@ -122,7 +122,7 @@ git pull origin main
 ```
 
 **Commit message:**
-> "Initial commit: YourGroupPredictionMarket waitlist landing page"
+> "Initial commit: Futura waitlist landing page"
 
 ---
 

@@ -110,7 +110,7 @@ if __name__ == '__main__':
     import sys
     
     if len(sys.argv) < 2:
-        print("\n🛠️  Database Manager for YourGroupPredictionMarket")
+        print("\n🛠️  Database Manager for Futura")
         print("\nUsage:")
         print("  python3.10 db_manager.py stats          - Show statistics")
         print("  python3.10 db_manager.py recent [N]     - Show recent N registrations")

@@ -1,4 +1,4 @@
-# YourGroupPredictionMarket - Waitlist Landing Page
+# Futura - Waitlist Landing Page
 
 A professional, Polymarket-inspired waitlist landing page for a prediction market platform. Optimized for PythonAnywhere deployment.
 
@@ -8,7 +8,7 @@ A professional, Polymarket-inspired waitlist landing page for a prediction marke
 
 ## 🎯 Overview
 
-**YourGroupPredictionMarket** is a Polymarket-style order book prediction market. This landing page collects pre-launch registrations with email and geolocation data.
+**Futura** is a Polymarket-style order book prediction market. This landing page collects pre-launch registrations with email and geolocation data.
 
 ### Features
 

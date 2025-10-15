@@ -5,7 +5,7 @@
 set -e  # Exit on any error
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  YourGroupPredictionMarket - PythonAnywhere Deployment     ║"
+echo "║  Futura - PythonAnywhere Deployment                        ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 

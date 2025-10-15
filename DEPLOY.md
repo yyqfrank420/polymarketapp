@@ -8,7 +8,7 @@
 # Initialize git (if not already done)
 git init
 git add .
-git commit -m "Initial commit: YourGroupPredictionMarket waitlist"
+git commit -m "Initial commit: Futura waitlist"
 
 # Create repo on GitHub, then push
 git remote add origin https://github.com/yourusername/yourrepo.git
