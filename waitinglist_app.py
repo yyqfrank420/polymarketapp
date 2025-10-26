@@ -39,8 +39,11 @@ if not STRIPE_PUBLISHABLE_KEY:
 if not PRODUCT_ID:
     raise ValueError("STRIPE_PRODUCT_ID environment variable is required")
 
+<<<<<<< HEAD
 # Stripe is now properly configured
 
+=======
+>>>>>>> clean-stripe-integration
 # Database setup - use absolute path for production
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATABASE = os.path.join(BASE_DIR, 'waitinglist.db')
