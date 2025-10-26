@@ -9,9 +9,10 @@ def create_env_file():
     """Create .env file with Stripe configuration"""
     
     env_content = """# Stripe Configuration
-STRIPE_SECRET_KEY=sk_test_51SMPehGf9P1kk0BnS9ypd2cPraRWqPfQtJHhPTcpcpuQHIkBxVjcRy1ubNJvkwCBkeYEZ5m9Es5gMWUZfxXonObj00ggxVBZmU
-STRIPE_PUBLISHABLE_KEY=pk_test_51SMPehGf9P1kk0Bn6fixDPguXM8bSxEJy6F7wTmzQB7mVQtzEkFBpqg9xenscQDVArnvwfgBBUEn4IRVKNEUEBgj000B6a9RPe
-STRIPE_PRODUCT_ID=prod_TJ1v4b9S6EUxIQ
+# Replace these with your actual Stripe keys
+STRIPE_SECRET_KEY=your_stripe_secret_key_here
+STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key_here
+STRIPE_PRODUCT_ID=your_stripe_product_id_here
 
 # Flask Configuration
 FLASK_ENV=development
