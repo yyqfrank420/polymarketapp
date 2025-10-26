@@ -4,10 +4,6 @@ import os
 import logging
 from datetime import datetime
 import stripe
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
 
 app = Flask(__name__)
 
@@ -26,18 +22,10 @@ app.config['ENV'] = os.environ.get('FLASK_ENV', 'development')
 app.config['DEBUG'] = app.config['ENV'] == 'development'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Stripe Configuration
-stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
-STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
-PRODUCT_ID = os.environ.get('STRIPE_PRODUCT_ID')
-
-# Validate required environment variables
-if not stripe.api_key:
-    raise ValueError("STRIPE_SECRET_KEY environment variable is required")
-if not STRIPE_PUBLISHABLE_KEY:
-    raise ValueError("STRIPE_PUBLISHABLE_KEY environment variable is required")
-if not PRODUCT_ID:
-    raise ValueError("STRIPE_PRODUCT_ID environment variable is required")
+# Stripe Configuration (hardcoded for test keys)
+stripe.api_key = 'sk_test_51SMPehGf9P1kk0BnS9ypd2cPraRWqPfQtJHhPTcpcpuQHIkBxVjcRy1ubNJvkwCBkeYEZ5m9Es5gMWUZfxXonObj00ggxVBZmU'
+STRIPE_PUBLISHABLE_KEY = 'pk_test_51SMPehGf9P1kk0Bn6fixDPguXM8bSxEJy6F7wTmzQB7mVQtzEkFBpqg9xenscQDVArnvwfgBBUEn4IRVKNEUEBgj000B6a9RPe'
+PRODUCT_ID = 'prod_TJ1v4b9S6EUxIQ'
 
 # Database setup - use absolute path for production
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
