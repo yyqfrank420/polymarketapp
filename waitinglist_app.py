@@ -23,9 +23,9 @@ app.config['DEBUG'] = app.config['ENV'] == 'development'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Stripe Configuration
-stripe.api_key = 'sk_test_51SMPehGf9P1kk0BnS9ypd2cPraRWqPfQtJHhPTcpcpuQHIkBxVjcRy1ubNJvkwCBkeYEZ5m9Es5gMWUZfxXonObj00ggxVBZmU'
-STRIPE_PUBLISHABLE_KEY = 'pk_test_51SMPehGf9P1kk0Bn6fixDPguXM8bSxEJy6F7wTmzQB7mVQtzEkFBpqg9xenscQDVArnvwfgBBUEn4IRVKNEUEBgj000B6a9RPe'
-PRODUCT_ID = 'prod_TJ1v4b9S6EUxIQ'
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', 'sk_test_51SMPehGf9P1kk0BnS9ypd2cPraRWqPfQtJHhPTcpcpuQHIkBxVjcRy1ubNJvkwCBkeYEZ5m9Es5gMWUZfxXonObj00ggxVBZmU')
+STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY', 'pk_test_51SMPehGf9P1kk0Bn6fixDPguXM8bSxEJy6F7wTmzQB7mVQtzEkFBpqg9xenscQDVArnvwfgBBUEn4IRVKNEUEBgj000B6a9RPe')
+PRODUCT_ID = os.environ.get('STRIPE_PRODUCT_ID', 'prod_TJ1v4b9S6EUxIQ')
 
 # Stripe is now properly configured
 
