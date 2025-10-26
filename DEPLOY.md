@@ -22,9 +22,9 @@ pip3.10 install --user -r requirements.txt
 
 ### Set environment variables in PythonAnywhere Web tab:
 ```
-STRIPE_SECRET_KEY = sk_test_51SMPehGf9P1kk0BnS9ypd2cPraRWqPfQtJHhPTcpcpuQHIkBxVjcRy1ubNJvkwCBkeYEZ5m9Es5gMWUZfxXonObj00ggxVBZmU
-STRIPE_PUBLISHABLE_KEY = pk_test_51SMPehGf9P1kk0Bn6fixDPguXM8bSxEJy6F7wTmzQB7mVQtzEkFBpqg9xenscQDVArnvwfgBBUEn4IRVKNEUEBgj000B6a9RPe
-STRIPE_PRODUCT_ID = prod_TJ1v4b9S6EUxIQ
+STRIPE_SECRET_KEY = your_stripe_secret_key
+STRIPE_PUBLISHABLE_KEY = your_stripe_publishable_key  
+STRIPE_PRODUCT_ID = your_stripe_product_id
 FLASK_ENV = production
 ```
 
