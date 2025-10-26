@@ -3,6 +3,11 @@ import sqlite3
 import os
 import logging
 from datetime import datetime
+import stripe
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -20,6 +25,19 @@ else:
 app.config['ENV'] = os.environ.get('FLASK_ENV', 'development')
 app.config['DEBUG'] = app.config['ENV'] == 'development'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Stripe Configuration
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
+PRODUCT_ID = os.environ.get('STRIPE_PRODUCT_ID')
+
+# Validate required environment variables
+if not stripe.api_key:
+    raise ValueError("STRIPE_SECRET_KEY environment variable is required")
+if not STRIPE_PUBLISHABLE_KEY:
+    raise ValueError("STRIPE_PUBLISHABLE_KEY environment variable is required")
+if not PRODUCT_ID:
+    raise ValueError("STRIPE_PRODUCT_ID environment variable is required")
 
 # Database setup - use absolute path for production
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -54,7 +72,7 @@ def get_db():
 @app.route('/')
 def index():
     """Render the landing page"""
-    return render_template('index.html')
+    return render_template('index.html', stripe_publishable_key=STRIPE_PUBLISHABLE_KEY)
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -118,6 +136,69 @@ def get_count():
     except Exception as e:
         logger.error(f'Count retrieval error: {str(e)}')
         return jsonify({'count': 0}), 200
+
+# Stripe Routes
+@app.route('/api/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    """Create a Stripe checkout session for premium subscription"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Invalid request format'}), 400
+        
+        logger.info(f"Creating checkout session with Stripe API key: {stripe.api_key[:20]}...")
+        logger.info(f"Product ID: {PRODUCT_ID}")
+        
+        # Create checkout session using your actual product
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'eur',
+                    'product': PRODUCT_ID,  # Use your actual product ID
+                    'unit_amount': 6767,  # €67.67 in cents
+                    'recurring': {
+                        'interval': 'month'
+                    }
+                },
+                'quantity': 1,
+            }],
+            mode='subscription',  # Changed to subscription mode
+            success_url=request.url_root + 'success?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=request.url_root + 'cancel',
+            metadata={
+                'user_email': data.get('email', ''),
+            }
+        )
+        
+        logger.info(f"Checkout session created successfully: {checkout_session.id}")
+        return jsonify({'checkout_url': checkout_session.url}), 200
+        
+    except stripe.error.StripeError as e:
+        logger.error(f'Stripe API error: {str(e)}')
+        return jsonify({'error': f'Stripe error: {str(e)}'}), 500
+    except Exception as e:
+        logger.error(f'General checkout error: {str(e)}')
+        return jsonify({'error': 'Failed to create checkout session'}), 500
+
+@app.route('/success')
+def success():
+    """Handle successful payment"""
+    session_id = request.args.get('session_id')
+    if session_id:
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            logger.info(f'Payment successful for session: {session_id}')
+            return render_template('success.html', session=session)
+        except Exception as e:
+            logger.error(f'Error retrieving session: {str(e)}')
+    
+    return render_template('success.html')
+
+@app.route('/cancel')
+def cancel():
+    """Handle cancelled payment"""
+    return render_template('cancel.html')
 
 # Error handlers for production
 @app.errorhandler(404)

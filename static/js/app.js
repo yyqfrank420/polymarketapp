@@ -26,6 +26,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup form submission
     const form = document.getElementById('waitlistForm');
     form.addEventListener('submit', handleFormSubmit);
+    
+    // Setup premium subscription button
+    const premiumBtn = document.getElementById('premiumBtn');
+    if (premiumBtn) {
+        premiumBtn.addEventListener('click', handlePremiumSubscription);
+    }
 });
 
 // Handle successful geolocation
@@ -179,5 +185,49 @@ function showMessage(message, type) {
 function isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+}
+
+// Handle premium subscription
+async function handlePremiumSubscription() {
+    const premiumBtn = document.getElementById('premiumBtn');
+    const originalText = premiumBtn.innerHTML;
+    
+    try {
+        // Show loading state
+        premiumBtn.disabled = true;
+        premiumBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Processing...';
+        
+        // Get user email if available
+        const emailInput = document.getElementById('emailInput');
+        const userEmail = emailInput ? emailInput.value.trim() : '';
+        
+        // Create checkout session
+        const response = await fetch('/api/create-checkout-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: userEmail
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.checkout_url) {
+            // Redirect to Stripe Checkout
+            window.location.href = data.checkout_url;
+        } else {
+            throw new Error(data.error || 'Failed to create checkout session');
+        }
+        
+    } catch (error) {
+        console.error('Premium subscription error:', error);
+        showMessage('Failed to start premium subscription. Please try again.', 'error');
+        
+        // Reset button state
+        premiumBtn.disabled = false;
+        premiumBtn.innerHTML = originalText;
+    }
 }
 
