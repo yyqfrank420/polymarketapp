@@ -3,135 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Futura - Join the Waitlist</title>
+    <title>Futura - Prediction Markets</title>
     
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body class="dark-mode">
     
-    <!-- Premium Subscription Button -->
-    <div class="premium-button-container">
-        <button id="premiumBtn" class="btn btn-premium">
-            <span class="premium-icon">⭐</span>
-            Premium Subscription
-        </button>
-    </div>
-    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold" href="/">
+                <span class="brand-icon">📊</span> Futura
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">Markets</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/my-bets">Portfolio</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <button id="connectWalletBtn" class="btn btn-wallet">
+                        <span class="wallet-icon">🔗</span> Connect Wallet
+                    </button>
+                    <span id="walletAddressDisplay" class="wallet-address"></span>
+                    <a href="/waitlist" class="btn btn-outline-light btn-sm">Join Waitlist</a>
+                    <a href="/admin" class="btn btn-admin btn-sm">Admin</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
     <!-- Hero Section -->
-    <section class="hero-section">
+    <section class="hero-section-dark">
         <div class="container">
-            <div class="row justify-content-center">
-                <div class="col-lg-8 text-center">
-                    <h1 class="hero-title">Futura</h1>
-                    <p class="hero-subtitle">Polymarket-Style Order Book</p>
-                    <p class="hero-description">
-                        Trade on real-world events with transparent price discovery. A regulated, accessible prediction market for sports, politics, and global events.
+            <div class="row align-items-center">
+                <div class="col-lg-12 text-center">
+                    <div class="mb-4">
+                        <span style="background: rgba(76, 154, 255, 0.15); padding: 0.5rem 1.5rem; border-radius: 24px; font-size: 0.85rem; font-weight: 700; color: var(--blue-primary); border: 1px solid rgba(76, 154, 255, 0.3);">
+                            🚀 LIVE NOW
+                        </span>
+                    </div>
+                    <h1 class="hero-title-dark mb-4">
+                        Trade on What<br>You Believe In
+                    </h1>
+                    <p class="hero-subtitle-dark mx-auto">
+                        The world's most transparent prediction market.<br>
+                        Trade on sports, politics, crypto, and more with real money.
                     </p>
-                    
-                    <!-- Email Form -->
-                    <div class="waitlist-form-container">
-                        <form id="waitlistForm" class="waitlist-form">
-                            <div class="input-group input-group-lg">
-                                <input 
-                                    type="email" 
-                                    class="form-control" 
-                                    id="emailInput" 
-                                    placeholder="Enter your email" 
-                                    required
-                                    aria-label="Email address"
-                                >
-                                <button class="btn btn-primary" type="submit" id="submitBtn">
-                                    Join Waitlist
-                                </button>
-                            </div>
-                        </form>
-                        <div id="messageContainer" class="message-container"></div>
-                    </div>
-                    
-                    <!-- Counter -->
-                    <div class="counter-container">
-                        <p class="counter-text">
-                            <span id="registrationCount" class="counter-number">0</span> 
-                            people already on the waitlist
-                        </p>
+                    <div class="hero-stats justify-content-center">
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalVolume">€0</div>
+                            <div class="stat-label">24h Volume</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalMarkets">0</div>
+                            <div class="stat-label">Active Markets</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalTraders">0</div>
+                            <div class="stat-label">Total Traders</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </section>
-    
-    <!-- NABC Section -->
-    <section class="nabc-section">
+
+    <!-- Filters -->
+    <section class="filters-section">
         <div class="container">
-            <div class="row g-4">
-                
-                <!-- Need Card -->
-                <div class="col-md-6 col-lg-3">
-                    <div class="nabc-card">
-                        <div class="nabc-icon">💡</div>
-                        <h3 class="nabc-title">Need</h3>
-                        <p class="nabc-text">
-                            Mainstream betting platforms focus only on sports, while public interest now extends to elections, entertainment, and global events. Existing crypto-based prediction sites are unregulated, complex, and risky. Casual users seek a safe, intuitive, and transparent alternative.
-                        </p>
-                    </div>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="filter-buttons">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="crypto">Crypto</button>
+                    <button class="filter-btn" data-filter="politics">Politics</button>
+                    <button class="filter-btn" data-filter="sports">Sports</button>
+                    <button class="filter-btn" data-filter="entertainment">Entertainment</button>
                 </div>
-                
-                <!-- Approach Card -->
-                <div class="col-md-6 col-lg-3">
-                    <div class="nabc-card">
-                        <div class="nabc-icon">🎯</div>
-                        <h3 class="nabc-title">Approach</h3>
-                        <p class="nabc-text">
-                            A Polymarket-style order-book model wrapped in a regulated, mobile-first interface. Transparent price discovery and user-driven liquidity with seamless deposits (Apple Pay, PayPal), clear payout displays, and wide event coverage spanning sports, politics, and pop culture.
-                        </p>
-                    </div>
+                <div class="search-box">
+                    <input type="text" id="searchMarkets" class="form-control search-input" placeholder="Search markets...">
                 </div>
-                
-                <!-- Benefit Card -->
-                <div class="col-md-6 col-lg-3">
-                    <div class="nabc-card">
-                        <div class="nabc-icon">✨</div>
-                        <h3 class="nabc-title">Benefit</h3>
-                        <p class="nabc-text">
-                            For users — a transparent, low-friction market that makes event prediction accessible and fun. For operators — a low-liability, scalable model with minimal exposure and high engagement. Financial-grade transparency meets mainstream usability.
-                        </p>
-                    </div>
-                </div>
-                
-                <!-- Competition Card -->
-                <div class="col-md-6 col-lg-3">
-                    <div class="nabc-card">
-                        <div class="nabc-icon">🚀</div>
-                        <h3 class="nabc-title">Competition</h3>
-                        <p class="nabc-text">
-                            Sportsbooks are trusted but confined to sports. Crypto prediction markets offer broad coverage but are intimidating and unregulated. We uniquely combine order-book transparency with regulated accessibility — a first-mover advantage in regulated non-sports prediction markets.
-                        </p>
-                    </div>
-                </div>
-                
             </div>
         </div>
     </section>
-    
+
+    <!-- Markets Grid -->
+    <section class="markets-section">
+        <div class="container">
+            <div id="marketsList" class="markets-grid"></div>
+            <div id="marketsLoading" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+            <div id="marketsEmpty" class="empty-state" style="display: none;">
+                <div class="empty-icon">📊</div>
+                <h3>No markets yet</h3>
+                <p>Check back soon for exciting prediction markets!</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Activity Feed -->
+    <section class="activity-feed-section">
+        <div class="activity-feed-header">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="activity-feed-title">Live Activity</h3>
+                <span class="activity-status">
+                    <span class="status-indicator"></span>
+                    Live
+                </span>
+            </div>
+        </div>
+        <div class="activity-feed" id="activityFeed">
+            <!-- Populated by JS -->
+            <div class="text-center text-muted py-5">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Loading activity...
+            </div>
+        </div>
+    </section>
+
     <!-- Footer -->
-    <footer class="footer">
+    <footer class="footer-dark">
         <div class="container">
             <div class="row">
-                <div class="col-12 text-center">
-                    <p class="footer-text">
-                        <small>
-                            Your email will only be used to notify you when we launch. 
-                            <br>
-                            Contact: <a href="mailto:hello@yourgrouppm.com">hello@yourgrouppm.com</a>
-                        </small>
+                <div class="col-md-4 mb-4">
+                    <h5 class="fw-bold mb-3">Futura</h5>
+                    <p class="text-muted small">The world's most transparent prediction market platform.</p>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <h6 class="fw-bold mb-3">Platform</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="/" class="text-muted small">Markets</a></li>
+                        <li><a href="/my-bets" class="text-muted small">Portfolio</a></li>
+                        <li><a href="/waitlist" class="text-muted small">Join Waitlist</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <h6 class="fw-bold mb-3">Contact</h6>
+                    <p class="text-muted small">
+                        <a href="mailto:hello@futura.com" class="text-muted">hello@futura.com</a>
                     </p>
+                </div>
+            </div>
+            <div class="row mt-4 pt-4 border-top border-secondary">
+                <div class="col-12 text-center text-muted small">
+                    © 2025 Futura. All rights reserved.
                 </div>
             </div>
         </div>
@@ -140,17 +173,11 @@
     <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- Stripe.js -->
-    <script src="https://js.stripe.com/v3/"></script>
+    <!-- Ethers.js for MetaMask integration -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
     
     <!-- Custom JavaScript -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     
-    <!-- Stripe Configuration -->
-    <script>
-        const stripe = Stripe('{{ stripe_publishable_key }}');
-    </script>
-    
 </body>
 </html>
-
