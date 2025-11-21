@@ -8,6 +8,7 @@ from collections import defaultdict
 import queue
 import threading
 import uuid
+import math
 
 app = Flask(__name__)
 
@@ -33,7 +34,7 @@ PRODUCT_ID = 'prod_TJ1v4b9S6EUxIQ'
 
 # Database setup - use absolute path for production
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATABASE = os.path.join(BASE_DIR, 'waitinglist.db')
+DATABASE = os.path.join(BASE_DIR, 'polymarket.db')
 
 def init_db():
     """Initialize the database and required tables if they don't exist"""
@@ -84,6 +85,24 @@ def init_db():
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bets_market ON bets(market_id)')
+    # users table for fake crypto balance
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            wallet TEXT PRIMARY KEY,
+            balance REAL DEFAULT 0.0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME
+        )
+    ''')
+    # market_state table for LMSR (tracks q_yes and q_no for each market)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS market_state (
+            market_id INTEGER PRIMARY KEY,
+            q_yes REAL DEFAULT 0.0,
+            q_no REAL DEFAULT 0.0,
+            FOREIGN KEY(market_id) REFERENCES markets(id)
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -92,6 +111,59 @@ def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
+
+# ========== USER BALANCE MANAGEMENT ==========
+INITIAL_FAKE_CRYPTO_BALANCE = 1000.0  # Initial fake crypto credit (e.g., 1000 MATIC/USDC)
+
+def get_user_balance(wallet):
+    """Get user balance, create user if doesn't exist"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT balance FROM users WHERE wallet=?', (wallet,))
+    row = cursor.fetchone()
+    
+    if not row:
+        # First time user - credit them with fake crypto
+        cursor.execute('''
+            INSERT INTO users (wallet, balance, last_login)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        ''', (wallet, INITIAL_FAKE_CRYPTO_BALANCE))
+        conn.commit()
+        conn.close()
+        logger.info(f'New user {wallet} credited with {INITIAL_FAKE_CRYPTO_BALANCE} fake crypto')
+        return INITIAL_FAKE_CRYPTO_BALANCE
+    
+    balance = row['balance'] or 0.0
+    conn.close()
+    return balance
+
+def update_user_balance(wallet, amount, operation='deduct'):
+    """Update user balance (deduct or add)"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    current_balance = get_user_balance(wallet)
+    
+    if operation == 'deduct':
+        new_balance = max(0, current_balance - amount)
+    else:  # add
+        new_balance = current_balance + amount
+    
+    cursor.execute('UPDATE users SET balance=?, last_login=CURRENT_TIMESTAMP WHERE wallet=?', 
+                  (new_balance, wallet))
+    conn.commit()
+    conn.close()
+    
+    return new_balance
+
+def check_user_exists(wallet):
+    """Check if user exists in database"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT wallet FROM users WHERE wallet=?', (wallet,))
+    exists = cursor.fetchone() is not None
+    conn.close()
+    return exists
 
 # ========== BET QUEUE SYSTEM ==========
 bet_queue = queue.Queue()
@@ -139,17 +211,19 @@ def bet_worker():
                     bet_queue.task_done()
                     continue
                 
-                # Get current totals AFTER previous bets (sequential processing)
-                cursor.execute('''SELECT
-                                   SUM(CASE WHEN side="YES" THEN amount ELSE 0 END) as yes_total,
-                                   SUM(CASE WHEN side="NO" THEN amount ELSE 0 END) as no_total
-                                 FROM bets WHERE market_id=?''', (market_id,))
-                totals = cursor.fetchone()
-                yes_total = totals['yes_total'] or 0
-                no_total = totals['no_total'] or 0
+                # Check user balance
+                user_balance = get_user_balance(wallet)
+                if user_balance < amount:
+                    bet_results[request_id] = {
+                        'success': False,
+                        'message': f'Insufficient balance. You have ${user_balance:.2f}, need ${amount:.2f}'
+                    }
+                    conn.close()
+                    bet_queue.task_done()
+                    continue
                 
-                # Calculate shares using AMM formula
-                shares, price_per_share = calculate_shares_amm(amount, side, yes_total, no_total)
+                # Calculate shares using LMSR
+                shares, price_per_share = calculate_shares_lmsr(amount, side, market_id)
                 
                 if shares <= 0:
                     bet_results[request_id] = {
@@ -165,10 +239,14 @@ def bet_worker():
                     INSERT INTO bets (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature))
+                
+                # Deduct balance
+                new_balance = update_user_balance(wallet, amount, 'deduct')
+                
                 conn.commit()
                 conn.close()
                 
-                logger.info(f'Bet placed: market {market_id}, {side} {amount} ({shares} shares @ ${price_per_share}) by {wallet}')
+                logger.info(f'Bet placed: market {market_id}, {side} ${amount:.2f} ({shares:.2f} shares @ ${price_per_share:.4f}) by {wallet}. New balance: ${new_balance:.2f}')
                 
                 bet_results[request_id] = {
                     'success': True,
@@ -304,7 +382,7 @@ def list_markets():
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM markets ORDER BY created_at DESC')
         markets = [dict(_row_to_dict(r)) for r in cursor.fetchall()]
-        # attach aggregates
+        # attach aggregates and prices using LMSR
         for m in markets:
             cursor.execute('''SELECT
                                SUM(CASE WHEN side="YES" THEN amount ELSE 0 END) as yes_total,
@@ -315,6 +393,13 @@ def list_markets():
             m['yes_total'] = agg['yes_total'] or 0.0
             m['no_total'] = agg['no_total'] or 0.0
             m['bet_count'] = agg['bet_count'] or 0
+            
+            # Calculate prices using LMSR
+            yes_price, no_price = calculate_market_price(m['id'])
+            m['yes_price'] = yes_price
+            m['no_price'] = no_price
+            m['yes_price_cents'] = round(yes_price * 100, 2)
+            m['no_price_cents'] = round(no_price * 100, 2)
         conn.close()
         return jsonify({'markets': markets}), 200
     except Exception as e:
@@ -342,6 +427,10 @@ def create_market():
             VALUES (?,?,?,?,?,?)
         ''', (question, description, image_url, category, end_date, created_by))
         market_id = cursor.lastrowid
+        
+        # Initialize market state for LMSR
+        cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, 0.0, 0.0)', (market_id,))
+        
         conn.commit()
         conn.close()
         logger.info(f'Created market {market_id}: {question} by {created_by}')
@@ -365,35 +454,93 @@ def get_market(market_id):
         bets = [dict(_row_to_dict(r)) for r in cursor.fetchall()]
         cursor.execute('''SELECT
                            SUM(CASE WHEN side="YES" THEN amount ELSE 0 END) as yes_total,
-                           SUM(CASE WHEN side="NO" THEN amount ELSE 0 END) as no_total
+                           SUM(CASE WHEN side="NO" THEN amount ELSE 0 END) as no_total,
+                           COUNT(*) as bet_count
                          FROM bets WHERE market_id=?''', (market_id,))
         agg = cursor.fetchone()
         conn.close()
         market['yes_total'] = agg['yes_total'] or 0.0
         market['no_total'] = agg['no_total'] or 0.0
+        market['bet_count'] = agg['bet_count'] or 0
+        
+        # Calculate prices using LMSR
+        yes_price, no_price = calculate_market_price(market_id)
+        market['yes_price'] = yes_price
+        market['no_price'] = no_price
+        market['yes_price_cents'] = round(yes_price * 100, 2)
+        market['no_price_cents'] = round(no_price * 100, 2)
+        
         return jsonify({'market': market, 'bets': bets}), 200
     except Exception as e:
         logger.error(f'Get market error: {str(e)}')
         return jsonify({'error': 'Failed to fetch market'}), 500
 
-# Constant Product AMM Configuration
-INITIAL_LIQUIDITY = 1000  # Seeded liquidity for each side (like Polymarket)
+# ========== LMSR (Logarithmic Market Scoring Rule) Configuration ==========
+import math
 
-def calculate_market_price(yes_total, no_total):
-    """
-    Constant Product AMM: x * y = k
-    Simple implementation with initial seeded liquidity
-    """
-    # Add initial liquidity to both sides (seeded liquidity)
-    x = yes_total + INITIAL_LIQUIDITY  # YES reserves
-    y = no_total + INITIAL_LIQUIDITY   # NO reserves
+# Liquidity parameter (b) - controls how sensitive prices are to trading volume
+# Higher b = less sensitive prices, more liquidity
+# Lower b = more sensitive prices, less liquidity
+LMSR_B = 100.0  # Standard liquidity parameter
+
+def get_market_state(market_id):
+    """Get or initialize market state for LMSR"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT q_yes, q_no FROM market_state WHERE market_id=?', (market_id,))
+    row = cursor.fetchone()
+    conn.close()
     
-    # Price = reserves of opposite side / total reserves
-    # Buying YES costs NO tokens, so price = y / (x + y)
-    # Buying NO costs YES tokens, so price = x / (x + y)
-    total = x + y
-    yes_price = y / total  # Price to buy YES (in terms of NO reserves)
-    no_price = x / total   # Price to buy NO (in terms of YES reserves)
+    if row:
+        return row['q_yes'] or 0.0, row['q_no'] or 0.0
+    else:
+        # Initialize market state if it doesn't exist
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, 0.0, 0.0)', (market_id,))
+        conn.commit()
+        conn.close()
+        return 0.0, 0.0
+
+def update_market_state(market_id, q_yes, q_no):
+    """Update market state for LMSR"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO market_state (market_id, q_yes, q_no)
+        VALUES (?, ?, ?)
+        ON CONFLICT(market_id) DO UPDATE SET q_yes=?, q_no=?
+    ''', (market_id, q_yes, q_no, q_yes, q_no))
+    conn.commit()
+    conn.close()
+
+def calculate_market_price(market_id):
+    """
+    Calculate market prices using LMSR (Logarithmic Market Scoring Rule)
+    
+    LMSR Formula:
+    - Price(YES) = exp(q_yes/b) / (exp(q_yes/b) + exp(q_no/b))
+    - Price(NO) = exp(q_no/b) / (exp(q_yes/b) + exp(q_no/b))
+    
+    Where:
+    - q_yes: quantity of YES shares outstanding
+    - q_no: quantity of NO shares outstanding
+    - b: liquidity parameter
+    """
+    q_yes, q_no = get_market_state(market_id)
+    
+    # Calculate prices using LMSR formula
+    exp_yes = math.exp(q_yes / LMSR_B)
+    exp_no = math.exp(q_no / LMSR_B)
+    total = exp_yes + exp_no
+    
+    if total == 0:
+        # Initial state: 50/50
+        yes_price = 0.5
+        no_price = 0.5
+    else:
+        yes_price = exp_yes / total
+        no_price = exp_no / total
     
     # Clamp to prevent extreme prices
     min_price = 0.01
@@ -408,36 +555,68 @@ def calculate_market_price(yes_total, no_total):
     
     return yes_price, no_price
 
-def calculate_shares_amm(amount, side, yes_total, no_total):
+def calculate_shares_lmsr(amount, side, market_id):
     """
-    Calculate shares using constant product AMM formula
-    When betting $amount on side, calculate how many shares user receives
-    """
-    # Current reserves with initial liquidity
-    x = yes_total + INITIAL_LIQUIDITY  # YES reserves
-    y = no_total + INITIAL_LIQUIDITY   # NO reserves
-    k = x * y  # Constant product
+    Calculate shares using LMSR cost function
     
+    LMSR Cost Function:
+    C(q) = b * ln(exp(q_yes/b) + exp(q_no/b))
+    
+    To buy shares:
+    1. Calculate current cost: C(q_current)
+    2. Calculate new cost after purchase: C(q_new)
+    3. Cost to user = C(q_new) - C(q_current)
+    4. Shares received = amount / average_price
+    
+    For binary markets:
+    - Buying YES: increases q_yes, cost = b * ln((exp(q_yes/b) + exp(q_no/b)) / (exp(q_yes_old/b) + exp(q_no/b)))
+    - Buying NO: increases q_no, cost = b * ln((exp(q_yes/b) + exp(q_no/b)) / (exp(q_yes/b) + exp(q_no_old/b)))
+    """
+    q_yes, q_no = get_market_state(market_id)
+    
+    # Calculate current cost
+    exp_yes = math.exp(q_yes / LMSR_B)
+    exp_no = math.exp(q_no / LMSR_B)
+    current_cost = LMSR_B * math.log(exp_yes + exp_no) if (exp_yes + exp_no) > 0 else 0
+    
+    # Calculate new state after purchase
     if side == 'YES':
-        # Betting on YES: adding amount to YES reserves
-        # Formula: (x + amount) * (y - shares_out) = k
-        # Solve for shares_out (amount of NO tokens removed = YES shares received)
-        new_x = x + amount
-        new_y = k / new_x
-        shares = y - new_y
+        # Buying YES shares increases q_yes
+        # We need to solve: cost = b * ln((exp((q_yes + delta)/b) + exp(q_no/b)) / (exp(q_yes/b) + exp(q_no/b)))
+        # For simplicity, we'll use iterative approach or approximation
+        
+        # Approximate: buying amount worth of YES shares
+        # Price per share ≈ current YES price
+        current_yes_price, _ = calculate_market_price(market_id)
+        
+        # Shares received = amount / price
+        shares = amount / current_yes_price if current_yes_price > 0 else 0
+        
+        # Update q_yes proportionally (simplified approach)
+        # In full LMSR, we'd solve the cost function exactly
+        new_q_yes = q_yes + shares
+        
+        # Update market state
+        update_market_state(market_id, new_q_yes, q_no)
+        
+        # Calculate effective price per share
+        price_per_share = current_yes_price
+        
     else:  # NO
-        # Betting on NO: adding amount to NO reserves
-        # Formula: (x - shares_out) * (y + amount) = k
-        # Solve for shares_out (amount of YES tokens removed = NO shares received)
-        new_y = y + amount
-        new_x = k / new_y
-        shares = x - new_x
+        # Buying NO shares increases q_no
+        _, current_no_price = calculate_market_price(market_id)
+        
+        shares = amount / current_no_price if current_no_price > 0 else 0
+        
+        new_q_no = q_no + shares
+        
+        # Update market state
+        update_market_state(market_id, q_yes, new_q_no)
+        
+        price_per_share = current_no_price
     
     # Ensure shares are positive
     shares = max(0, shares)
-    
-    # Calculate effective price per share
-    price_per_share = amount / shares if shares > 0 else 0
     
     return shares, price_per_share
 
@@ -612,9 +791,13 @@ def get_market_payouts(market_id):
                     'payout': 0
                 })
         
-        # Calculate profit for each wallet
+        # Calculate profit for each wallet and credit payouts
         for wallet_data in payouts.values():
             wallet_data['profit'] = wallet_data['payout'] - wallet_data['total_bet']
+            # Credit payout to user balance
+            if wallet_data['payout'] > 0:
+                update_user_balance(wallet_data['wallet'], wallet_data['payout'], 'add')
+                logger.info(f'Credited {wallet_data["wallet"]} with ${wallet_data["payout"]:.2f} payout')
         
         return jsonify({
             'market_id': market_id,
@@ -665,18 +848,27 @@ def get_recent_activity():
             yes_total = totals['yes_total'] or 0.0
             no_total = totals['no_total'] or 0.0
             
-            # Calculate current probability
-            current_yes_price, current_no_price = calculate_market_price(yes_total, no_total)
+            # Calculate current probability using LMSR
+            current_yes_price, current_no_price = calculate_market_price(market_id)
             
-            # Calculate previous probability (before this bet)
-            prev_yes_total = yes_total
-            prev_no_total = no_total
+            # For previous probability, we need to temporarily adjust market state
+            # Get current state
+            q_yes, q_no = get_market_state(market_id)
+            
+            # Calculate previous state (before this bet)
             if bet['side'] == 'YES':
-                prev_yes_total -= bet['amount']
+                prev_q_yes = q_yes - bet['shares'] if bet.get('shares') else q_yes
+                prev_q_no = q_no
             else:
-                prev_no_total -= bet['amount']
+                prev_q_yes = q_yes
+                prev_q_no = q_no - bet['shares'] if bet.get('shares') else q_no
             
-            prev_yes_price, prev_no_price = calculate_market_price(prev_yes_total, prev_no_total)
+            # Calculate previous price (temporarily update state)
+            temp_q_yes, temp_q_no = get_market_state(market_id)
+            update_market_state(market_id, prev_q_yes, prev_q_no)
+            prev_yes_price, prev_no_price = calculate_market_price(market_id)
+            # Restore state
+            update_market_state(market_id, temp_q_yes, temp_q_no)
             
             # Calculate change
             prob_change = (current_yes_price - prev_yes_price) * 100
@@ -756,8 +948,8 @@ def sell_shares(market_id):
         yes_total = totals['yes_total'] or 0.0
         no_total = totals['no_total'] or 0.0
         
-        # Calculate current price
-        current_yes_price, current_no_price = calculate_market_price(yes_total, no_total)
+        # Calculate current price using LMSR
+        current_yes_price, current_no_price = calculate_market_price(market_id)
         current_price = current_yes_price if bet['side'] == 'YES' else current_no_price
         
         # Calculate sell value (shares * current price)
@@ -777,6 +969,9 @@ def sell_shares(market_id):
                 SET shares = ?, amount = ?
                 WHERE id = ?
             ''', (remaining_shares, remaining_amount, bet_id))
+        
+        # Credit balance from selling shares
+        update_user_balance(wallet, sell_value, 'add')
         
         conn.commit()
         conn.close()
@@ -850,8 +1045,8 @@ def get_user_bets(wallet):
                 yes_total = totals['yes_total'] or 0.0
                 no_total = totals['no_total'] or 0.0
                 
-                # Calculate current price
-                current_yes_price, current_no_price = calculate_market_price(yes_total, no_total)
+                # Calculate current price using LMSR
+                current_yes_price, current_no_price = calculate_market_price(bet_info['market_id'])
                 current_price = current_yes_price if bet_info['side'] == 'YES' else current_no_price
                 
                 # Calculate current value and unrealized profit
@@ -880,17 +1075,9 @@ def get_market_price(market_id):
         conn = get_db()
         cursor = conn.cursor()
         
-        cursor.execute('''SELECT
-                           SUM(CASE WHEN side="YES" THEN amount ELSE 0 END) as yes_total,
-                           SUM(CASE WHEN side="NO" THEN amount ELSE 0 END) as no_total
-                         FROM bets WHERE market_id=?''', (market_id,))
-        totals = cursor.fetchone()
+        # Calculate prices using LMSR
+        yes_price, no_price = calculate_market_price(market_id)
         conn.close()
-        
-        yes_total = totals['yes_total'] or 0
-        no_total = totals['no_total'] or 0
-        
-        yes_price, no_price = calculate_market_price(yes_total, no_total)
         
         return jsonify({
             'yes_price': round(yes_price, 4),
@@ -902,6 +1089,48 @@ def get_market_price(market_id):
     except Exception as e:
         logger.error(f'Get market price error: {str(e)}')
         return jsonify({'error': 'Failed to get prices'}), 500
+
+# ========== USER BALANCE API ENDPOINTS ==========
+@app.route('/api/user/<wallet>/balance', methods=['GET'])
+def get_user_balance_api(wallet):
+    """Get user balance, auto-credit on first login"""
+    try:
+        balance = get_user_balance(wallet)
+        is_new_user = balance == INITIAL_FAKE_CRYPTO_BALANCE
+        
+        return jsonify({
+            'wallet': wallet,
+            'balance': round(balance, 2),
+            'is_new_user': is_new_user
+        }), 200
+    except Exception as e:
+        logger.error(f'Get balance error: {str(e)}')
+        return jsonify({'error': 'Failed to get balance'}), 500
+
+@app.route('/api/user/<wallet>/credit', methods=['POST'])
+def credit_user(wallet):
+    """Manually credit user (for admin/testing)"""
+    try:
+        data = request.get_json() or {}
+        amount = float(data.get('amount', INITIAL_FAKE_CRYPTO_BALANCE))
+        
+        # Ensure user exists
+        get_user_balance(wallet)
+        
+        # Credit balance
+        new_balance = update_user_balance(wallet, amount, 'add')
+        
+        logger.info(f'Credited {wallet} with ${amount:.2f}. New balance: ${new_balance:.2f}')
+        
+        return jsonify({
+            'success': True,
+            'wallet': wallet,
+            'credited': round(amount, 2),
+            'new_balance': round(new_balance, 2)
+        }), 200
+    except Exception as e:
+        logger.error(f'Credit user error: {str(e)}')
+        return jsonify({'error': 'Failed to credit user'}), 500
 
 # Stripe Routes
 @app.route('/api/create-checkout-session', methods=['POST'])

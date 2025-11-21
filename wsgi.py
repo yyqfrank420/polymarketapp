@@ -7,4 +7,4 @@ if project_home not in sys.path:
 
 os.environ['FLASK_ENV'] = 'production'
 
-from waitinglist_app import app as application
+from app import app as application

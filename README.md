@@ -44,7 +44,7 @@ See **[DEPLOY.md](DEPLOY.md)** for complete deployment instructions.
 pip install -r requirements.txt
 
 # Run the app
-python waitinglist_app.py
+python app.py
 
 # Visit
 open http://localhost:5001
@@ -56,7 +56,7 @@ open http://localhost:5001
 
 ```
 TVB_Workshops/
-├── waitinglist_app.py          # Main Flask application
+├── app.py                      # Main Flask application
 ├── db_manager.py               # Database management CLI
 ├── wsgi.py                     # WSGI config for PythonAnywhere
 ├── requirements.txt            # Python dependencies
@@ -187,8 +187,8 @@ tail -50 /var/log/yourusername.pythonanywhere.com.error.log
 ### Database issues?
 ```bash
 cd ~/TVB_Workshops
-rm waitinglist.db
-python3.10 -c "from waitinglist_app import init_db; init_db()"
+rm polymarket.db
+python3.10 -c "from app import init_db; init_db()"
 # Reload web app
 ```
 

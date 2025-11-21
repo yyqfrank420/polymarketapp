@@ -3,6 +3,7 @@ let userLocation = { latitude: null, longitude: null, country: '', city: '' };
 let currentAccount = null;
 let currentFilter = 'all';
 let allMarkets = [];
+let userBalance = 0.0;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -81,6 +82,9 @@ function initHomePage() {
     if (searchInput) {
         searchInput.addEventListener('input', filterMarkets);
     }
+    
+    // Load user balance
+    loadUserBalance();
     
     // Load markets
     loadHomeMarkets();
@@ -609,6 +613,9 @@ function initMarketDetailPage() {
     // Setup buy button
     document.getElementById('buyButton')?.addEventListener('click', executeBuy);
     
+    // Load user balance
+    loadUserBalance();
+    
     loadMarketDetail();
     
     // Load activity feed
@@ -914,6 +921,8 @@ async function pollBetStatus(requestId) {
                     const price = data.price_per_share || 0;
                     showMessage(`Bet placed! ${shares.toFixed(2)} shares @ ${(price * 100).toFixed(1)}¢`, 'success', 'tradingMessage');
                     resetBetUI();
+                    // Reload balance after bet
+                    await loadUserBalance();
                     await loadMarketDetail();
                     updateTradePreview();
                 } else {
@@ -959,6 +968,9 @@ function initMyBetsPage() {
     if (connectBtn) {
         connectBtn.addEventListener('click', connectWallet);
     }
+    
+    // Load user balance
+    loadUserBalance();
     
     // Load user bets
     loadUserBets();
@@ -1273,6 +1285,8 @@ async function confirmSell(betId, marketId, totalShares) {
         
         if (res.ok && data.success) {
             showMessage(data.message, 'success');
+            // Reload balance after selling
+            await loadUserBalance();
             // Reload bets
             await loadUserBets();
         } else {
@@ -1554,6 +1568,9 @@ async function connectWallet() {
         currentAccount = accounts[0];
         updateWalletUI();
         
+        // Load balance on connect (auto-credits if new user)
+        await loadUserBalance();
+        
         // Load user bets if on my-bets page
         if (window.location.pathname === '/my-bets') {
             loadUserBets();
@@ -1571,14 +1588,22 @@ async function tryInitWallet() {
                 currentAccount = accounts[0];
                 updateWalletUI();
                 
+                // Load balance on init
+                await loadUserBalance();
+                
                 // Load user bets if on my-bets page
                 if (window.location.pathname === '/my-bets') {
                     loadUserBets();
                 }
             }
-            window.ethereum.on('accountsChanged', (accs) => {
+            window.ethereum.on('accountsChanged', async (accs) => {
                 currentAccount = accs && accs.length ? accs[0] : null;
                 updateWalletUI();
+                
+                // Load balance when account changes
+                if (currentAccount) {
+                    await loadUserBalance();
+                }
                 
                 // Reload bets if on my-bets page
                 if (window.location.pathname === '/my-bets') {
@@ -1588,6 +1613,56 @@ async function tryInitWallet() {
         } catch (e) {
             // ignore
         }
+    }
+}
+
+async function loadUserBalance() {
+    if (!currentAccount) {
+        userBalance = 0.0;
+        updateBalanceDisplay();
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/user/${currentAccount}/balance`);
+        const data = await res.json();
+        
+        if (res.ok) {
+            userBalance = data.balance || 0.0;
+            updateBalanceDisplay();
+            
+            // Show welcome message for new users
+            if (data.is_new_user) {
+                showMessage(`Welcome! You've been credited with $${userBalance.toFixed(2)} fake crypto to start trading!`, 'success', 'tradingMessage');
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load balance', e);
+    }
+}
+
+function updateBalanceDisplay() {
+    // Update balance in trading UI
+    const balanceElements = document.querySelectorAll('.user-balance, #userBalance');
+    balanceElements.forEach(el => {
+        el.textContent = `$${userBalance.toFixed(2)}`;
+    });
+    
+    // Update balance in navbar - show when wallet is connected
+    const balanceDisplay = document.getElementById('userBalanceDisplay');
+    if (balanceDisplay) {
+        if (currentAccount) {
+            balanceDisplay.textContent = `Balance: $${userBalance.toFixed(2)}`;
+            balanceDisplay.style.display = 'inline-block';
+        } else {
+            balanceDisplay.style.display = 'none';
+        }
+    }
+    
+    // Update balance in market detail page trading card
+    const balanceSmall = document.querySelector('small.text-muted');
+    if (balanceSmall && balanceSmall.textContent.includes('Balance:')) {
+        balanceSmall.innerHTML = `Balance: <span id="userBalance">$${userBalance.toFixed(2)}</span>`;
     }
 }
 
@@ -1677,6 +1752,9 @@ function updateWalletUI() {
         btn.disabled = false;
         btn.style.opacity = '1';
     }
+    
+    // Update balance display when wallet state changes
+    updateBalanceDisplay();
 }
 
 function disconnectWallet() {
