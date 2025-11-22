@@ -31,6 +31,9 @@
                         <a class="nav-link active" href="/">Markets</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/resolved">Resolved</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/my-bets">Portfolio</a>
                     </li>
                 </ul>
@@ -40,7 +43,6 @@
                     </button>
                     <span id="walletAddressDisplay" class="wallet-address"></span>
                     <span id="userBalanceDisplay" class="wallet-address" style="display: none; margin-right: 0.5rem;">Balance: $0.00</span>
-                    <a href="/waitlist" class="btn btn-outline-light btn-sm">Join Waitlist</a>
                     <a href="/admin" class="btn btn-admin btn-sm">Admin</a>
                 </div>
             </div>
@@ -153,7 +155,6 @@
                     <ul class="list-unstyled">
                         <li><a href="/" class="text-muted small">Markets</a></li>
                         <li><a href="/my-bets" class="text-muted small">Portfolio</a></li>
-                        <li><a href="/waitlist" class="text-muted small">Join Waitlist</a></li>
                     </ul>
                 </div>
                 <div class="col-md-4 mb-4">
@@ -179,6 +180,10 @@
     
     <!-- Custom JavaScript -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <!-- Chatbot -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
     
 </body>
 </html>

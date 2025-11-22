@@ -192,6 +192,78 @@ python3.10 -c "from app import init_db; init_db()"
 # Reload web app
 ```
 
+## Blockchain Features
+
+### Smart Contracts (Sepolia Testnet)
+
+The platform supports hybrid blockchain integration - markets can be created on-chain for verifiable, trustless market mechanics while betting remains fast and efficient off-chain.
+
+**Setup:**
+1. Install Node.js dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Configure environment variables in `.env`:
+   ```
+   INFURA_PROJECT_ID=your_infura_project_id
+   SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/your_project_id
+   PRIVATE_KEY=your_wallet_private_key
+   ```
+
+3. Deploy contract to Sepolia:
+   ```bash
+   npm run deploy
+   ```
+
+4. Save the contract address to `.env` as `CONTRACT_ADDRESS`
+
+**Features:**
+- Markets can be created on Ethereum Sepolia testnet
+- View markets on Etherscan for transparency
+- Blockchain verification badges on market pages
+- Hybrid approach: markets on-chain, bets off-chain for optimal UX
+
+**Getting Sepolia Test ETH:**
+- Use faucets: https://sepoliafaucet.com/ or https://faucet.quicknode.com/ethereum/sepolia
+- Free test tokens for development
+
+## AI Chatbot
+
+### OpenAI-Powered Market Assistant
+
+An intelligent chatbot available on all customer-facing pages that helps users:
+- Check market odds and prices
+- Place bets via natural language
+- View their betting portfolio
+- Get news related to markets
+- Answer platform questions
+
+**Setup:**
+1. Add OpenAI API key to environment:
+   ```
+   OPENAI_API_KEY=your_openai_api_key
+   ```
+
+2. Add Tavily API key for news search:
+   ```
+   TAVILY_API_KEY=your_tavily_api_key
+   ```
+
+**Features:**
+- Function calling for real-time market data
+- News search integration via Tavily
+- Conversation thread persistence
+- Guardrails against inappropriate content
+- Natural language bet placement
+
+**Example Queries:**
+- "What are the odds for market 1?"
+- "Bet $50 on YES for Bitcoin market"
+- "Show me my bets"
+- "Get news about Bitcoin"
+- "What markets are available?"
+
 ### Static files not showing?
 - Verify static files mapping: `/static/` → `/home/yourusername/TVB_Workshops/static/`
 - Reload web app

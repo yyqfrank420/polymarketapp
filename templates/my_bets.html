@@ -31,6 +31,9 @@
                         <a class="nav-link" href="/">Markets</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/resolved">Resolved</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link active" href="/my-bets">Portfolio</a>
                     </li>
                 </ul>
@@ -236,6 +239,10 @@
     
     <!-- Custom JavaScript -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <!-- Chatbot -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
     
 </body>
 </html>

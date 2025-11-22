@@ -31,6 +31,9 @@
                         <a class="nav-link" href="/">Markets</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/resolved">Resolved</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/my-bets">Portfolio</a>
                     </li>
                 </ul>
@@ -46,7 +49,7 @@
     </nav>
 
     <!-- Market Detail -->
-    <section class="market-detail-section">
+    <section class="market-detail-section" data-market-id="{{ market_id }}">
         <div class="container">
             <div class="row">
                 <div class="col-lg-8">
@@ -96,11 +99,15 @@
                         <!-- Preview Section -->
                         <div class="trade-preview mb-3" id="tradePreview" style="display: none;">
                             <div class="preview-row">
-                                <span class="preview-label">To win</span>
+                                <span class="preview-label">If you win</span>
                                 <span class="preview-value preview-win">
                                     <span id="previewWinAmount" class="preview-win-amount">—</span>
                                     <span id="previewWinProfit" class="preview-win-profit">—</span>
                                 </span>
+                            </div>
+                            <div class="preview-row" id="previewAfterFeeRow" style="display: none;">
+                                <span class="preview-label"></span>
+                                <span class="preview-value" id="previewAfterFee" style="color: var(--text-secondary); font-size: 0.9rem;">—</span>
                             </div>
                             <div class="preview-row">
                                 <span class="preview-label">You'll get:</span>
@@ -161,9 +168,16 @@
     
     <!-- Custom JavaScript -->
     <script>
-        const MARKET_ID = {{ market_id }};
+        // Extract MARKET_ID from data attribute
+        const section = document.querySelector('.market-detail-section');
+        window.MARKET_ID = section ? parseInt(section.dataset.marketId) : null;
+        console.log('Market detail page loaded, MARKET_ID:', window.MARKET_ID);
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <!-- Chatbot -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
     
 </body>
 </html>

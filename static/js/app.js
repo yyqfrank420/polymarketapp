@@ -1,5 +1,10 @@
+// ========== UTILITY FUNCTIONS (needed early) ==========
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+}
+
 // Global variables
-let userLocation = { latitude: null, longitude: null, country: '', city: '' };
 let currentAccount = null;
 let currentFilter = 'all';
 let allMarkets = [];
@@ -15,12 +20,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Page-specific initialization
     if (path === '/' || path === '/index.html') {
         initHomePage();
-    } else if (path === '/waitlist') {
-        initWaitlistPage();
     } else if (path.startsWith('/market/')) {
         initMarketDetailPage();
     } else if (path === '/my-bets') {
         initMyBetsPage();
+    } else if (path === '/resolved') {
+        // Resolved markets page is handled by inline script in template
+        tryInitWallet();
     } else if (path === '/admin') {
         initAdminDashboard();
     } else if (path === '/admin/create-market') {
@@ -31,6 +37,21 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ========== UTILITY FUNCTIONS ==========
+function formatNumberWithCommas(num, decimals = 2) {
+    // Format number with commas (thousands separators)
+    if (num === null || num === undefined || isNaN(num)) {
+        return '0';
+    }
+    const numValue = parseFloat(num);
+    if (decimals === 0) {
+        return Math.round(numValue).toLocaleString('en-US');
+    }
+    return numValue.toLocaleString('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+    });
+}
+
 function formatNumber(num) {
     // Format number with k/m notation and 3 significant figures
     if (num >= 1000000) {
@@ -91,6 +112,9 @@ function initHomePage() {
     
     // Load activity feed
     loadActivityFeed();
+    
+    // Refresh markets every 5 seconds to show live odds updates
+    setInterval(loadHomeMarkets, 5000);
     
     // Refresh activity feed every 10 seconds
     setInterval(loadActivityFeed, 10000);
@@ -191,171 +215,13 @@ function renderHomeMarkets(markets) {
                     </div>
                     
                     <div class="market-stats">
-                        <span>€${(total).toFixed(0)} volume</span>
+                        <span>$${formatNumberWithCommas(total, 0)} volume</span>
                         <span class="market-status-badge ${statusClass}">${statusText}</span>
                     </div>
                 </div>
             </a>
         `;
     }).join('');
-}
-
-// ========== WAITLIST PAGE ==========
-function initWaitlistPage() {
-    // Load initial count
-    updateCount();
-    
-    // Request geolocation
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            handleGeolocationSuccess,
-            handleGeolocationError,
-            { timeout: 10000, enableHighAccuracy: false }
-        );
-    } else {
-        fallbackIPLookup();
-    }
-    
-    // Setup form submission
-    const form = document.getElementById('waitlistForm');
-    if (form) {
-    form.addEventListener('submit', handleFormSubmit);
-    }
-    
-    // Setup premium button
-    const premiumBtn = document.getElementById('premiumBtn');
-    if (premiumBtn) {
-        premiumBtn.addEventListener('click', handlePremiumSubscription);
-    }
-}
-
-function handleGeolocationSuccess(position) {
-    userLocation.latitude = position.coords.latitude;
-    userLocation.longitude = position.coords.longitude;
-    reverseGeocode(userLocation.latitude, userLocation.longitude);
-}
-
-function handleGeolocationError(error) {
-    console.log('Geolocation error:', error.message);
-    fallbackIPLookup();
-}
-
-function reverseGeocode(lat, lon) {
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.address) {
-                userLocation.country = data.address.country || '';
-                userLocation.city = data.address.city || data.address.town || data.address.village || '';
-            }
-        })
-        .catch(error => console.log('Reverse geocoding failed:', error));
-}
-
-function fallbackIPLookup() {
-    fetch('https://ipapi.co/json/')
-        .then(response => response.json())
-        .then(data => {
-            userLocation.latitude = data.latitude || null;
-            userLocation.longitude = data.longitude || null;
-            userLocation.country = data.country_name || '';
-            userLocation.city = data.city || '';
-        })
-        .catch(error => console.log('IP lookup failed:', error));
-}
-
-function updateCount() {
-    fetch('/api/count')
-        .then(response => response.json())
-        .then(data => {
-            const countElement = document.getElementById('registrationCount');
-            if (countElement) {
-            countElement.textContent = data.count || 0;
-            }
-        })
-        .catch(error => console.log('Error fetching count:', error));
-}
-
-function handleFormSubmit(event) {
-    event.preventDefault();
-    
-    const emailInput = document.getElementById('emailInput');
-    const submitBtn = document.getElementById('submitBtn');
-    const email = emailInput.value.trim();
-    
-    if (!email || !isValidEmail(email)) {
-        showMessage('Please enter a valid email address', 'error', 'messageContainer');
-        return;
-    }
-    
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Joining...';
-    
-    fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-        email: email,
-        latitude: userLocation.latitude,
-        longitude: userLocation.longitude,
-        country: userLocation.country,
-        city: userLocation.city
-        })
-    })
-    .then(response => response.json().then(data => ({ status: response.status, body: data })))
-    .then(result => {
-        if (result.status === 200 && result.body.success) {
-            showMessage(result.body.message, 'success', 'messageContainer');
-            emailInput.value = '';
-            updateCount();
-        } else {
-            showMessage(result.body.message || 'An error occurred', 'error', 'messageContainer');
-        }
-    })
-    .catch(error => {
-        console.error('Submission error:', error);
-        showMessage('Network error. Please try again.', 'error', 'messageContainer');
-    })
-    .finally(() => {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Join Waitlist';
-    });
-}
-
-function isValidEmail(email) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-async function handlePremiumSubscription() {
-    const premiumBtn = document.getElementById('premiumBtn');
-    const originalText = premiumBtn.innerHTML;
-    
-    try {
-        premiumBtn.disabled = true;
-        premiumBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
-        
-        const emailInput = document.getElementById('emailInput');
-        const userEmail = emailInput ? emailInput.value.trim() : '';
-        
-        const response = await fetch('/api/create-checkout-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: userEmail })
-        });
-        
-        const data = await response.json();
-        
-        if (data.checkout_url) {
-            window.location.href = data.checkout_url;
-        } else {
-            throw new Error(data.error || 'Failed to create checkout session');
-        }
-    } catch (error) {
-        console.error('Premium subscription error:', error);
-        showMessage('Failed to start premium subscription. Please try again.', 'error', 'messageContainer');
-        premiumBtn.disabled = false;
-        premiumBtn.innerHTML = originalText;
-    }
 }
 
 // ========== ACTIVITY FEED ==========
@@ -397,12 +263,15 @@ async function loadActivityFeed() {
             // Render grouped by market
             feedContainer.innerHTML = sortedMarkets.map(market => {
                 const transactionsHtml = market.transactions.map(item => {
-                    const changeClass = item.probability_change > 0 ? 'positive' : 
-                                      item.probability_change < 0 ? 'negative' : 'neutral';
-                    const changeIcon = item.probability_change > 0 ? '↑' : 
-                                     item.probability_change < 0 ? '↓' : '→';
-                    const changeText = item.probability_change !== 0 ? 
-                                     `${changeIcon} ${Math.abs(item.probability_change).toFixed(1)}%` : 
+                    // Handle missing or invalid probability_change
+                    const probChange = item.probability_change != null && !isNaN(item.probability_change) ? 
+                                      parseFloat(item.probability_change) : 0;
+                    const changeClass = probChange > 0 ? 'positive' : 
+                                      probChange < 0 ? 'negative' : 'neutral';
+                    const changeIcon = probChange > 0 ? '↑' : 
+                                     probChange < 0 ? '↓' : '→';
+                    const changeText = probChange !== 0 ? 
+                                     `${changeIcon} ${Math.abs(probChange).toFixed(1)}%` : 
                                      '—';
                     
                     // Format wallet address (shortened)
@@ -419,13 +288,13 @@ async function loadActivityFeed() {
                     return `
                         <div class="activity-transaction ${rollClass}" data-transaction-id="${item.id}">
                             <span class="activity-item-side ${item.side.toLowerCase()}">${item.side}</span>
-                            <span class="activity-amount">$${item.amount.toFixed(2)}</span>
-                            <span class="activity-shares">${item.shares.toFixed(2)} shares</span>
+                            <span class="activity-amount">${formatNumberWithCommas(item.amount, 2)} USDC</span>
+                            <span class="activity-shares">${formatNumberWithCommas(item.shares, 2)} shares</span>
                             <span class="activity-item-wallet">${walletShort}</span>
                             <span class="activity-item-time">${timeAgo}</span>
                             <div class="activity-transaction-prob">
-                                <span class="activity-probability-value">${item.current_probability}%</span>
-                                <span class="activity-probability-change ${changeClass} ${item.probability_change !== 0 ? 'flash' : ''}" data-prob-change="${item.probability_change}">${changeText}</span>
+                                <span class="activity-probability-value">${(item.current_probability != null && !isNaN(item.current_probability)) ? parseFloat(item.current_probability).toFixed(1) : '0.0'}%</span>
+                                <span class="activity-probability-change ${changeClass} ${probChange !== 0 ? 'flash' : ''}" data-prob-change="${probChange}">${changeText}</span>
                             </div>
                         </div>
                     `;
@@ -593,16 +462,55 @@ function initializeResizeHandlers() {
 
 // ========== MARKET DETAIL PAGE ==========
 let selectedSide = null; // 'YES' or 'NO' or null
+// MARKET_ID is set by the template (window.MARKET_ID) or extracted from URL
 
 function initMarketDetailPage() {
+    // Check if MARKET_ID is set by template, otherwise extract from URL
+    if (typeof window.MARKET_ID === 'undefined' || window.MARKET_ID === null) {
+        const pathMatch = window.location.pathname.match(/\/market\/(\d+)/);
+        if (pathMatch) {
+            window.MARKET_ID = parseInt(pathMatch[1], 10);
+        } else {
+            console.error('Could not extract MARKET_ID from URL');
+            const infoContainer = document.getElementById('marketDetailInfo');
+            if (infoContainer) {
+                infoContainer.innerHTML = '<div class="alert alert-danger">Market ID not found</div>';
+            }
+            return;
+        }
+    }
+    
+    console.log('Initializing market detail page, MARKET_ID:', window.MARKET_ID);
+    
     const connectBtn = document.getElementById('connectWalletBtn');
     if (connectBtn) {
         connectBtn.addEventListener('click', connectWallet);
     }
     
-    // Setup side selection buttons
-    document.getElementById('selectYesBtn')?.addEventListener('click', () => selectSide('YES'));
-    document.getElementById('selectNoBtn')?.addEventListener('click', () => selectSide('NO'));
+    // Setup side selection buttons with explicit checks
+    const yesBtn = document.getElementById('selectYesBtn');
+    const noBtn = document.getElementById('selectNoBtn');
+    
+    console.log('Yes button found:', !!yesBtn);
+    console.log('No button found:', !!noBtn);
+    
+    if (yesBtn) {
+        yesBtn.addEventListener('click', () => {
+            console.log('YES button clicked');
+            selectSide('YES');
+        });
+    } else {
+        console.error('selectYesBtn not found in DOM');
+    }
+    
+    if (noBtn) {
+        noBtn.addEventListener('click', () => {
+            console.log('NO button clicked');
+            selectSide('NO');
+        });
+    } else {
+        console.error('selectNoBtn not found in DOM');
+    }
     
     // Setup input listener for live preview
     const input = document.getElementById('betAmountInput');
@@ -611,7 +519,10 @@ function initMarketDetailPage() {
     }
     
     // Setup buy button
-    document.getElementById('buyButton')?.addEventListener('click', executeBuy);
+    const buyBtn = document.getElementById('buyButton');
+    if (buyBtn) {
+        buyBtn.addEventListener('click', executeBuy);
+    }
     
     // Load user balance
     loadUserBalance();
@@ -629,19 +540,28 @@ function initMarketDetailPage() {
 }
 
 function selectSide(side) {
+    console.log('selectSide called with:', side);
     selectedSide = side;
     
     // Update button states
-    document.getElementById('selectYesBtn').classList.toggle('selected', side === 'YES');
-    document.getElementById('selectNoBtn').classList.toggle('selected', side === 'NO');
+    const yesBtn = document.getElementById('selectYesBtn');
+    const noBtn = document.getElementById('selectNoBtn');
+    
+    if (yesBtn) yesBtn.classList.toggle('selected', side === 'YES');
+    if (noBtn) noBtn.classList.toggle('selected', side === 'NO');
     
     // Show amount section (if not already shown)
-    document.getElementById('amountSection').style.display = 'block';
+    const amountSection = document.getElementById('amountSection');
+    if (amountSection) {
+        amountSection.style.display = 'block';
+    }
     
     // Update buy button text
     const buyBtn = document.getElementById('buyButton');
+    if (buyBtn) {
     buyBtn.textContent = `Buy ${side}`;
     buyBtn.style.display = 'block';
+    }
     
     // Keep input value when switching sides - just update preview
     updateTradePreview();
@@ -651,27 +571,109 @@ let currentPrices = { yes_price: 0.50, no_price: 0.50 };
 let previousPrices = { yes_price: 0.50, no_price: 0.50 }; // Track previous prices for animations
 
 async function loadMarketDetail() {
+    const marketId = window.MARKET_ID;
+    if (!marketId) {
+        console.error('MARKET_ID is not set');
+        const infoContainer = document.getElementById('marketDetailInfo');
+        if (infoContainer) {
+            infoContainer.innerHTML = '<div class="alert alert-danger">Market ID not found</div>';
+        }
+        return;
+    }
+    
+    console.log('Loading market detail for MARKET_ID:', marketId);
+    
     try {
-        const [marketRes, priceRes] = await Promise.all([
-            fetch(`/api/markets/${MARKET_ID}`),
-            fetch(`/api/markets/${MARKET_ID}/price`)
+        const [marketRes, priceRes, blockchainRes] = await Promise.all([
+            fetch(`/api/markets/${marketId}`),
+            fetch(`/api/markets/${marketId}/price`),
+            fetch(`/api/markets/${marketId}/blockchain-status`).catch(() => ({ ok: false }))
         ]);
         
         const marketData = await marketRes.json();
-        const priceData = await priceRes.json();
+        
+        // Handle price API - it might fail for resolved markets
+        let priceData = {};
+        try {
+            if (priceRes.ok) {
+                priceData = await priceRes.json();
+            } else {
+                // For resolved markets, use prices from market data
+                priceData = {
+                    yes_price: marketData.market.yes_price || 0.5,
+                    no_price: marketData.market.no_price || 0.5,
+                    yes_price_cents: marketData.market.yes_price_cents || 50,
+                    no_price_cents: marketData.market.no_price_cents || 50
+                };
+            }
+        } catch (e) {
+            console.warn('Price API failed, using market data prices:', e);
+            priceData = {
+                yes_price: marketData.market.yes_price || 0.5,
+                no_price: marketData.market.no_price || 0.5,
+                yes_price_cents: marketData.market.yes_price_cents || 50,
+                no_price_cents: marketData.market.no_price_cents || 50
+            };
+        }
+        
+        // Handle blockchain status
+        let blockchainData = { on_blockchain: false };
+        try {
+            if (blockchainRes.ok) {
+                blockchainData = await blockchainRes.json();
+            }
+        } catch (e) {
+            // Ignore blockchain errors
+        }
+        
+        if (!marketData.market) {
+            console.error('Market data not found:', marketData);
+            const infoContainer = document.getElementById('marketDetailInfo');
+            if (infoContainer) {
+                infoContainer.innerHTML = '<div class="alert alert-danger">Market not found</div>';
+            }
+            return;
+        }
         
         currentPrices = priceData;
-        renderMarketDetail(marketData.market, priceData);
+        console.log('Market data loaded, rendering...', marketData.market);
+        renderMarketDetail(marketData.market, priceData, blockchainData);
+        console.log('Market detail rendered successfully');
         } catch (e) {
         console.error('Failed to load market detail', e);
+        console.error('Error stack:', e.stack);
+        const infoContainer = document.getElementById('marketDetailInfo');
+        if (infoContainer) {
+            infoContainer.innerHTML = `<div class="alert alert-danger">Error loading market: ${e.message || 'Unknown error'}</div>`;
+        }
     }
 }
 
-function renderMarketDetail(market, prices) {
+function renderMarketDetail(market, prices, blockchainData = {}) {
+    console.log('renderMarketDetail called with:', { market: market?.id, prices, blockchainData });
+    
     const infoContainer = document.getElementById('marketDetailInfo');
     const oddsContainer = document.getElementById('oddsDisplay');
     
-    if (!market) return;
+    if (!market) {
+        console.error('No market data provided to renderMarketDetail');
+        if (infoContainer) {
+            infoContainer.innerHTML = '<div class="alert alert-danger">No market data available</div>';
+        }
+        return;
+    }
+    
+    if (!infoContainer) {
+        console.error('marketDetailInfo container not found');
+        return;
+    }
+    
+    if (!oddsContainer) {
+        console.error('oddsDisplay container not found');
+        return;
+    }
+    
+    try {
     
     const yesTotal = market.yes_total || 0;
     const noTotal = market.no_total || 0;
@@ -700,16 +702,37 @@ function renderMarketDetail(market, prices) {
     
     const imageUrl = market.image_url || 'https://via.placeholder.com/1200x400/1E293B/3B82F6?text=No+Image';
     
+    const blockchainBadge = blockchainData.on_blockchain ? `
+        <div class="mb-3">
+            <span class="badge bg-success me-2">✓ Verified on Blockchain</span>
+            ${blockchainData.etherscan_tx_url ? `<a href="${blockchainData.etherscan_tx_url}" target="_blank" class="btn btn-sm btn-outline-light">View on Etherscan</a>` : ''}
+        </div>
+    ` : '';
+    
+    const isResolved = market.status === 'resolved';
+    const resolutionBadge = isResolved ? `
+        <div class="mb-3">
+            <span class="badge ${market.resolution === 'YES' ? 'bg-success' : 'bg-danger'}" style="font-size: 1rem; padding: 0.5rem 1rem;">
+                ${market.resolution === 'YES' ? '✓' : '✗'} Resolved: ${market.resolution || 'Unknown'}
+            </span>
+        </div>
+    ` : '';
+    
     infoContainer.innerHTML = `
         ${market.image_url ? `<img src="${imageUrl}" alt="${escapeHtml(market.question)}" style="width: 100%; border-radius: 12px; margin-bottom: 2rem;" onerror="this.src='https://via.placeholder.com/1200x400/1E293B/3B82F6?text=No+Image'">` : ''}
         ${market.category ? `<span class="market-category">${escapeHtml(market.category)}</span>` : ''}
         <h1 class="mb-3">${escapeHtml(market.question)}</h1>
+        ${blockchainBadge}
+        ${resolutionBadge}
         <p class="text-muted mb-4">${escapeHtml(market.description || '')}</p>
         ${market.end_date ? `<p class="text-muted small">Ends: ${market.end_date}</p>` : ''}
         <div class="border-top border-secondary pt-3 mt-3">
             <div class="row">
-                <div class="col-md-4"><strong>Status:</strong> ${market.status}</div>
-                <div class="col-md-4"><strong>Total Volume:</strong> €${total.toFixed(2)}</div>
+                <div class="col-md-4">
+                    <strong>Status:</strong> 
+                    ${isResolved ? `<span class="badge bg-primary">Resolved: ${market.resolution || 'Unknown'}</span>` : '<span class="badge bg-success">Open</span>'}
+                </div>
+                <div class="col-md-4"><strong>Total Volume:</strong> $${formatNumberWithCommas(total, 2)}</div>
                 <div class="col-md-4"><strong>Bets:</strong> ${market.bet_count || 0}</div>
             </div>
         </div>
@@ -770,26 +793,61 @@ function renderMarketDetail(market, prices) {
     }
     
     // Disable betting if resolved
-    if (market.status !== 'open') {
-        document.getElementById('selectYesBtn').disabled = true;
-        document.getElementById('selectNoBtn').disabled = true;
-        document.getElementById('betAmountInput').disabled = true;
-        document.getElementById('buyButton').disabled = true;
+    const selectYesBtn = document.getElementById('selectYesBtn');
+    const selectNoBtn = document.getElementById('selectNoBtn');
+    const betAmountInput = document.getElementById('betAmountInput');
+    const buyButton = document.getElementById('buyButton');
+    
+    if (isResolved) {
+        if (selectYesBtn) selectYesBtn.disabled = true;
+        if (selectNoBtn) selectNoBtn.disabled = true;
+        if (betAmountInput) betAmountInput.disabled = true;
+        if (buyButton) buyButton.disabled = true;
+        
+        // Show resolution message
+        const tradingMessage = document.getElementById('tradingMessage');
+        if (tradingMessage) {
+            const resolution = market.resolution || 'Unknown';
+            const resolutionClass = resolution === 'YES' ? 'text-success' : 'text-danger';
+            tradingMessage.innerHTML = `<div class="alert alert-info mt-3"><strong>Market Resolved:</strong> <span class="${resolutionClass}">${resolution}</span></div>`;
+        }
     } else {
-        document.getElementById('selectYesBtn').disabled = false;
-        document.getElementById('selectNoBtn').disabled = false;
-        document.getElementById('betAmountInput').disabled = false;
-        document.getElementById('buyButton').disabled = false;
+        if (selectYesBtn) selectYesBtn.disabled = false;
+        if (selectNoBtn) selectNoBtn.disabled = false;
+        if (betAmountInput) betAmountInput.disabled = false;
+        if (buyButton) buyButton.disabled = false;
+        
+        // Clear resolution message
+        const tradingMessage = document.getElementById('tradingMessage');
+        if (tradingMessage) {
+            tradingMessage.innerHTML = '';
+        }
+    }
+    
+    console.log('Market detail rendered successfully');
+    
+    } catch (e) {
+        console.error('Error rendering market detail:', e);
+        console.error('Error stack:', e.stack);
+        if (infoContainer) {
+            infoContainer.innerHTML = `<div class="alert alert-danger">Error displaying market: ${e.message}</div>`;
+        }
     }
 }
 
 function updateTradePreview() {
     const inputValue = parseFloat(document.getElementById('betAmountInput').value || 0);
     const previewDiv = document.getElementById('tradePreview');
+    const balanceDisplay = document.getElementById('userBalance');
     
     if (inputValue <= 0 || !currentPrices || !selectedSide) {
         // Hide preview if no input or no side selected
         previewDiv.style.display = 'none';
+        // Reset balance display to current balance
+        if (balanceDisplay) {
+            balanceDisplay.innerHTML = `${formatNumberWithCommas(userBalance, 2)} USDC`;
+            balanceDisplay.style.color = '';
+        }
         return;
     }
     
@@ -801,14 +859,41 @@ function updateTradePreview() {
     const shares = inputValue / price;
     const roundedShares = Math.round(shares * 100) / 100;
     
-    // Potential win is shares * $1
+    // Potential win is shares * 1 USDC
     const potentialWin = roundedShares * 1.0;
     const profit = potentialWin - inputValue;
     
+    // Calculate net amount after 2% fee (only on profits)
+    const netProfit = Math.max(0, profit);
+    const fee = netProfit * 0.02;  // 2% fee on profits only
+    const netAmount = potentialWin - fee;
+    
     // Update preview - separate raw profit (white) and net profit (green)
-    document.getElementById('previewShares').textContent = `${roundedShares.toFixed(2)} shares`;
-    document.getElementById('previewWinAmount').textContent = `$${potentialWin.toFixed(2)}`;
-    document.getElementById('previewWinProfit').textContent = `(+$${profit.toFixed(2)})`;
+    document.getElementById('previewShares').textContent = `${formatNumberWithCommas(roundedShares, 2)} shares`;
+    document.getElementById('previewWinAmount').textContent = `${formatNumberWithCommas(potentialWin, 2)} USDC`;
+    document.getElementById('previewWinProfit').textContent = `(+${formatNumberWithCommas(profit, 2)} USDC)`;
+    
+    // Show "after fee" only if there's a profit
+    const afterFeeRow = document.getElementById('previewAfterFeeRow');
+    const afterFeeText = document.getElementById('previewAfterFee');
+    if (profit > 0 && fee > 0) {
+        afterFeeRow.style.display = 'flex';
+        afterFeeText.textContent = `(${formatNumberWithCommas(netAmount, 2)} USDC after 2% fee)`;
+    } else {
+        afterFeeRow.style.display = 'none';
+    }
+    
+    // Update balance display dynamically
+    if (balanceDisplay) {
+        const remainingBalance = userBalance - inputValue;
+        if (remainingBalance < 0) {
+            // Insufficient balance - show in red
+            balanceDisplay.innerHTML = `<span style="color: var(--red-no); font-weight: 700;">${formatNumberWithCommas(userBalance, 2)} USDC (Insufficient!)</span>`;
+        } else {
+            // Show only remaining balance (highlighted)
+            balanceDisplay.innerHTML = `<span style="color: var(--blue-primary); font-weight: 800;">${formatNumberWithCommas(remainingBalance, 2)} USDC</span>`;
+        }
+    }
 }
 
 function executeBuy() {
@@ -826,6 +911,11 @@ async function placeBetOnDetail(side) {
         return;
     }
     
+    if (!window.MARKET_ID) {
+        showMessage('Market ID is missing', 'error', 'tradingMessage');
+        return;
+    }
+    
     const inputValue = parseFloat(document.getElementById('betAmountInput').value || '0');
     if (!inputValue || inputValue <= 0) {
         showMessage('Enter a valid amount', 'error', 'tradingMessage');
@@ -837,7 +927,7 @@ async function placeBetOnDetail(side) {
     try {
         showMessage('Placing bet...', 'info', 'tradingMessage');
         
-        const res = await fetch(`/api/markets/${MARKET_ID}/bet`, {
+        const res = await fetch(`/api/markets/${window.MARKET_ID}/bet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ wallet: currentAccount, side, amount })
@@ -853,8 +943,8 @@ async function placeBetOnDetail(side) {
         } else if (res.ok && body.success) {
             // Immediate success (backward compatibility)
             const actualShares = body.shares || 0;
-            const totalCost = amount.toFixed(2);
-            showMessage(`Bet placed! You bought ${actualShares.toFixed(2)} shares for $${totalCost}`, 'success', 'tradingMessage');
+            const totalCost = formatNumberWithCommas(amount, 2);
+            showMessage(`Bet placed! You bought ${formatNumberWithCommas(actualShares, 2)} shares for ${totalCost} USDC`, 'success', 'tradingMessage');
             resetBetUI();
             await loadMarketDetail();
             updateTradePreview();
@@ -919,7 +1009,7 @@ async function pollBetStatus(requestId) {
                 if (data.success) {
                     const shares = data.shares || 0;
                     const price = data.price_per_share || 0;
-                    showMessage(`Bet placed! ${shares.toFixed(2)} shares @ ${(price * 100).toFixed(1)}¢`, 'success', 'tradingMessage');
+                    showMessage(`Bet placed! ${formatNumberWithCommas(shares, 2)} shares @ ${formatNumberWithCommas(price * 100, 1)}¢`, 'success', 'tradingMessage');
                     resetBetUI();
                     // Reload balance after bet
                     await loadUserBalance();
@@ -968,6 +1058,28 @@ function initMyBetsPage() {
     if (connectBtn) {
         connectBtn.addEventListener('click', connectWallet);
     }
+    
+    // Setup event delegation for sell buttons (works for dynamically created buttons)
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.classList.contains('sell-btn-portfolio')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const btn = e.target;
+            const betId = parseInt(btn.dataset.betId);
+            const marketId = parseInt(btn.dataset.marketId);
+            const shares = parseFloat(btn.dataset.shares || 0);
+            const amount = parseFloat(btn.dataset.amount || 0);
+            const buyPrice = parseFloat(btn.dataset.buyPrice || 0);
+            const currentPrice = parseFloat(btn.dataset.currentPrice || 0);
+            const currentValue = parseFloat(btn.dataset.currentValue || 0);
+            const unrealizedProfit = parseFloat(btn.dataset.unrealizedProfit || 0);
+            const question = btn.dataset.question || '';
+            const side = btn.dataset.side || 'YES';
+            
+            console.log('Sell button clicked:', { betId, marketId, shares, question, side });
+            openSellModal(betId, marketId, shares, amount, buyPrice, currentPrice, currentValue, unrealizedProfit, question, side);
+        }
+    });
     
     // Load user balance
     loadUserBalance();
@@ -1023,33 +1135,33 @@ function renderUserBets(bets) {
     const returnPct = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
     
     // Update NAV
-    document.getElementById('navValue').textContent = `$${navValue.toFixed(2)}`;
+    document.getElementById('navValue').textContent = `${formatNumberWithCommas(navValue, 2)} USDC`;
     const navChangeEl = document.getElementById('navChange');
     navChangeEl.className = `nav-change ${totalPL > 0 ? 'positive' : (totalPL < 0 ? 'negative' : '')}`;
     navChangeEl.innerHTML = `
-        <span class="nav-change-amount">${totalPL > 0 ? '+' : ''}$${totalPL.toFixed(2)}</span>
-        <span class="nav-change-percent">(${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%)</span>
+        <span class="nav-change-amount">${totalPL > 0 ? '+' : ''}${formatNumberWithCommas(totalPL, 2)} USDC</span>
+        <span class="nav-change-percent">(${returnPct > 0 ? '+' : ''}${formatNumberWithCommas(returnPct, 2)}%)</span>
     `;
     
     // Update metric cards
-    document.getElementById('openPositions').textContent = openPositions.length;
-    document.getElementById('totalInvested').textContent = `$${totalInvested.toFixed(2)}`;
+    document.getElementById('openPositions').textContent = formatNumberWithCommas(openPositions.length, 0);
+    document.getElementById('totalInvested').textContent = `${formatNumberWithCommas(totalInvested, 2)} USDC`;
     
     // Update performance metrics
     const realizedPLEl = document.getElementById('realizedPL');
-    realizedPLEl.textContent = `${realizedPL > 0 ? '+' : ''}$${realizedPL.toFixed(2)}`;
+    realizedPLEl.textContent = `${realizedPL > 0 ? '+' : ''}${formatNumberWithCommas(realizedPL, 2)}`;
     realizedPLEl.className = `performance-value realized-pl ${realizedPL > 0 ? 'positive' : (realizedPL < 0 ? 'negative' : '')}`;
     
     const unrealizedPLEl = document.getElementById('unrealizedPL');
-    unrealizedPLEl.textContent = `${unrealizedPL > 0 ? '+' : ''}$${unrealizedPL.toFixed(2)}`;
+    unrealizedPLEl.textContent = `${unrealizedPL > 0 ? '+' : ''}${formatNumberWithCommas(unrealizedPL, 2)}`;
     unrealizedPLEl.className = `performance-value unrealized-pl ${unrealizedPL > 0 ? 'positive' : (unrealizedPL < 0 ? 'negative' : '')}`;
     
     const totalPLEl = document.getElementById('totalPL');
-    totalPLEl.textContent = `${totalPL > 0 ? '+' : ''}$${totalPL.toFixed(2)}`;
+    totalPLEl.textContent = `${totalPL > 0 ? '+' : ''}${formatNumberWithCommas(totalPL, 2)}`;
     totalPLEl.className = `performance-value total-pl ${totalPL > 0 ? 'positive' : (totalPL < 0 ? 'negative' : '')}`;
     
     const returnPctEl = document.getElementById('returnPct');
-    returnPctEl.textContent = `${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%`;
+    returnPctEl.textContent = `${returnPct > 0 ? '+' : ''}${formatNumberWithCommas(returnPct, 2)}%`;
     returnPctEl.className = `performance-value return-pct ${returnPct > 0 ? 'positive' : (returnPct < 0 ? 'negative' : '')}`;
     
     // Render open positions table
@@ -1073,19 +1185,29 @@ function renderUserBets(bets) {
                     <td>
                         <span class="position-side-${b.side.toLowerCase()}">${b.side}</span>
                     </td>
-                    <td class="text-end">${(b.shares || 0).toFixed(2)}</td>
-                    <td class="text-end">$${b.amount.toFixed(2)}</td>
-                    <td class="text-end">${((b.buy_price || 0) * 100).toFixed(1)}¢</td>
-                    <td class="text-end">${((b.current_price || 0) * 100).toFixed(1)}¢</td>
-                    <td class="text-end">$${(b.current_value || 0).toFixed(2)}</td>
+                    <td class="text-end">${formatNumberWithCommas(b.shares || 0, 2)}</td>
+                    <td class="text-end">${formatNumberWithCommas(b.amount, 2)}</td>
+                    <td class="text-end">${formatNumberWithCommas((b.buy_price || 0) * 100, 1)}¢</td>
+                    <td class="text-end">${formatNumberWithCommas((b.current_price || 0) * 100, 1)}¢</td>
+                    <td class="text-end">${formatNumberWithCommas(b.current_value || 0, 2)}</td>
                     <td class="text-end ${plClass}">
-                        ${unrealizedProfit > 0 ? '+' : ''}$${unrealizedProfit.toFixed(2)}
+                        ${unrealizedProfit > 0 ? '+' : ''}${formatNumberWithCommas(unrealizedProfit, 2)}
                     </td>
                     <td class="text-end ${plClass}">
-                        ${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%
+                        ${returnPct > 0 ? '+' : ''}${formatNumberWithCommas(returnPct, 2)}%
                     </td>
                     <td class="text-center">
-                        <button class="sell-btn-portfolio" onclick="openSellModal(${b.id}, ${b.market_id}, ${(b.shares || 0)}, ${(b.amount || 0)}, ${(b.buy_price || 0)}, ${(b.current_price || 0)}, ${(b.current_value || 0)}, ${(b.unrealized_profit || 0)}, '${escapeHtml(b.question || '')}', '${b.side || ''}')">
+                        <button class="sell-btn-portfolio" 
+                                data-bet-id="${b.id}" 
+                                data-market-id="${b.market_id}"
+                                data-shares="${(b.shares || 0)}"
+                                data-amount="${(b.amount || 0)}"
+                                data-buy-price="${(b.buy_price || 0)}"
+                                data-current-price="${(b.current_price || 0)}"
+                                data-current-value="${(b.current_value || 0)}"
+                                data-unrealized-profit="${(b.unrealized_profit || 0)}"
+                                data-question="${escapeHtml(b.question || '')}"
+                                data-side="${b.side || ''}">
                             Sell
                         </button>
                     </td>
@@ -1129,14 +1251,14 @@ function renderUserBets(bets) {
                     <td>
                         <span class="position-side-${b.side.toLowerCase()}">${b.side}</span>
                     </td>
-                    <td class="text-end">${(b.shares || 0).toFixed(2)}</td>
-                    <td class="text-end">$${costBasis.toFixed(2)}</td>
-                    <td class="text-end">$${payout.toFixed(2)}</td>
+                    <td class="text-end">${formatNumberWithCommas(b.shares || 0, 2)}</td>
+                    <td class="text-end">${formatNumberWithCommas(costBasis, 2)}</td>
+                    <td class="text-end">${formatNumberWithCommas(payout, 2)}</td>
                     <td class="text-end ${plClass}">
-                        ${profit > 0 ? '+' : ''}$${profit.toFixed(2)}
+                        ${profit > 0 ? '+' : ''}${formatNumberWithCommas(profit, 2)}
                     </td>
                     <td class="text-end ${plClass}">
-                        ${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%
+                        ${returnPct > 0 ? '+' : ''}${formatNumberWithCommas(returnPct, 2)}%
                     </td>
                     <td>
                         <span class="${statusClass}">${b.result.toUpperCase()}</span>
@@ -1156,6 +1278,7 @@ function renderUserBets(bets) {
 }
 
 function openSellModal(betId, marketId, shares, costBasis, buyPrice, currentPrice, currentValue, unrealizedProfit, question, side) {
+    console.log('openSellModal called:', { betId, marketId, shares, question, side });
     if (!currentAccount) {
         showMessage('Connect your wallet first.', 'error');
         return;
@@ -1174,7 +1297,7 @@ function openSellModal(betId, marketId, shares, costBasis, buyPrice, currentPric
         <div class="sell-modal-content">
             <div class="sell-modal-header">
                 <h4>Sell Position</h4>
-                <button class="sell-modal-close" onclick="closeSellModal()">&times;</button>
+                <button class="sell-modal-close" id="sellModalCloseBtn">&times;</button>
                 </div>
             <div class="sell-modal-body">
                 <div class="sell-market-info">
@@ -1185,49 +1308,49 @@ function openSellModal(betId, marketId, shares, costBasis, buyPrice, currentPric
                 <div class="sell-details-grid">
                     <div class="sell-detail-item">
                         <span class="sell-detail-label">Shares</span>
-                        <span class="sell-detail-value">${shares.toFixed(2)}</span>
+                        <span class="sell-detail-value">${formatNumberWithCommas(shares, 2)}</span>
                         </div>
                     <div class="sell-detail-item">
                         <span class="sell-detail-label">Cost Basis</span>
-                        <span class="sell-detail-value">$${costBasis.toFixed(2)}</span>
+                        <span class="sell-detail-value">${formatNumberWithCommas(costBasis, 2)}</span>
                     </div>
                     <div class="sell-detail-item">
                         <span class="sell-detail-label">Buy Price</span>
-                        <span class="sell-detail-value">${(buyPrice * 100).toFixed(1)}¢</span>
+                        <span class="sell-detail-value">${formatNumberWithCommas(buyPrice * 100, 1)}¢</span>
                 </div>
                     <div class="sell-detail-item">
                         <span class="sell-detail-label">Current Price</span>
-                        <span class="sell-detail-value">${(currentPrice * 100).toFixed(1)}¢</span>
+                        <span class="sell-detail-value">${formatNumberWithCommas(currentPrice * 100, 1)}¢</span>
             </div>
                 </div>
                 
                 <div class="sell-summary">
                     <div class="sell-summary-row">
                         <span class="sell-summary-label">Sell Value</span>
-                        <span class="sell-summary-value">$${currentValue.toFixed(2)}</span>
+                        <span class="sell-summary-value">${formatNumberWithCommas(currentValue, 2)}</span>
                     </div>
                     <div class="sell-summary-row">
                         <span class="sell-summary-label">Cost Basis</span>
-                        <span class="sell-summary-value">$${costBasis.toFixed(2)}</span>
+                        <span class="sell-summary-value">${formatNumberWithCommas(costBasis, 2)}</span>
                     </div>
                     <div class="sell-summary-divider"></div>
                     <div class="sell-summary-row sell-summary-net">
                         <span class="sell-summary-label">Net P/L</span>
                         <span class="sell-summary-value ${plClass}" style="color: ${plColor}; font-weight: 700; font-size: 1.25rem;">
-                            ${unrealizedProfit >= 0 ? '+' : ''}$${unrealizedProfit.toFixed(2)}
+                            ${unrealizedProfit >= 0 ? '+' : ''}${formatNumberWithCommas(unrealizedProfit, 2)}
                         </span>
                     </div>
                     <div class="sell-summary-row">
                         <span class="sell-summary-label">Return</span>
                         <span class="sell-summary-value ${plClass}" style="color: ${plColor};">
-                            ${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%
+                            ${returnPct >= 0 ? '+' : ''}${formatNumberWithCommas(returnPct, 2)}%
                         </span>
                     </div>
                 </div>
             </div>
             <div class="sell-modal-footer">
-                <button class="sell-modal-cancel" onclick="closeSellModal()">Cancel</button>
-                <button class="sell-modal-confirm" onclick="confirmSell(${betId}, ${marketId}, ${shares})">
+                <button class="sell-modal-cancel" id="sellModalCancelBtn">Cancel</button>
+                <button class="sell-modal-confirm" id="sellModalConfirmBtn" data-bet-id="${betId}" data-market-id="${marketId}" data-shares="${shares}">
                     Confirm Sell
                 </button>
             </div>
@@ -1236,6 +1359,29 @@ function openSellModal(betId, marketId, shares, costBasis, buyPrice, currentPric
     
     document.body.appendChild(modal);
     setTimeout(() => modal.classList.add('show'), 10);
+    
+    // Setup button handlers
+    const closeBtn = modal.querySelector('#sellModalCloseBtn');
+    const cancelBtn = modal.querySelector('#sellModalCancelBtn');
+    const confirmBtn = modal.querySelector('#sellModalConfirmBtn');
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeSellModal);
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeSellModal);
+    }
+    
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', () => {
+            const betId = parseInt(confirmBtn.dataset.betId);
+            const marketId = parseInt(confirmBtn.dataset.marketId);
+            const shares = parseFloat(confirmBtn.dataset.shares);
+            console.log('Confirm sell clicked:', { betId, marketId, shares });
+            confirmSell(betId, marketId, shares);
+        });
+    }
     
     // Close on overlay click
     modal.addEventListener('click', (e) => {
@@ -1263,12 +1409,14 @@ function closeSellModal() {
 }
 
 async function confirmSell(betId, marketId, totalShares) {
+    console.log('confirmSell called:', { betId, marketId, totalShares, wallet: currentAccount });
     if (!currentAccount) {
         showMessage('Connect your wallet first.', 'error');
         return;
     }
     
     try {
+        console.log('Sending sell request to /api/markets/' + marketId + '/sell');
         const res = await fetch(`/api/markets/${marketId}/sell`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1280,21 +1428,24 @@ async function confirmSell(betId, marketId, totalShares) {
         });
         
         const data = await res.json();
-        
-        closeSellModal();
+        console.log('Sell response:', { status: res.status, ok: res.ok, data });
         
         if (res.ok && data.success) {
-            showMessage(data.message, 'success');
+            closeSellModal();
+            showMessage(data.message || `Successfully sold ${data.shares_sold || totalShares} shares`, 'success');
             // Reload balance after selling
             await loadUserBalance();
             // Reload bets
             await loadUserBets();
         } else {
-            showMessage(data.message || 'Failed to sell shares', 'error');
+            // Don't close modal on error so user can try again
+            const errorMsg = data.message || data.error || `Failed to sell shares (Status: ${res.status})`;
+            console.error('Sell failed:', errorMsg, data);
+            showMessage(errorMsg, 'error');
         }
     } catch (e) {
         console.error('Failed to sell shares', e);
-        showMessage('Error selling shares', 'error');
+        showMessage('Error selling shares: ' + e.message, 'error');
     }
 }
 
@@ -1307,6 +1458,7 @@ async function sellShares(betId, marketId, totalShares) {
 // ========== ADMIN DASHBOARD ==========
 function initAdminDashboard() {
     loadAdminStats();
+    loadUserDatabase();
     
     // Load activity feed
     loadActivityFeed();
@@ -1317,13 +1469,8 @@ function initAdminDashboard() {
 
 async function loadAdminStats() {
     try {
-        const [marketsRes, countRes] = await Promise.all([
-            fetch('/api/markets'),
-            fetch('/api/count')
-        ]);
-        
+        const marketsRes = await fetch('/api/markets');
         const marketsData = await marketsRes.json();
-        const countData = await countRes.json();
         
         const markets = marketsData.markets || [];
         const totalMarkets = markets.length;
@@ -1332,12 +1479,118 @@ async function loadAdminStats() {
         
         document.getElementById('adminTotalMarkets').textContent = totalMarkets;
         document.getElementById('adminTotalBets').textContent = totalBets;
-        document.getElementById('adminTotalVolume').textContent = `€${totalVolume.toFixed(0)}`;
-        document.getElementById('waitlistCount').textContent = countData.count || 0;
+        document.getElementById('adminTotalVolume').textContent = `${formatNumberWithCommas(totalVolume, 0)}`;
     } catch (e) {
         console.error('Failed to load admin stats', e);
     }
 }
+
+async function loadUserDatabase() {
+    try {
+        const res = await fetch('/api/admin/users');
+        const data = await res.json();
+        
+        const tbody = document.getElementById('userDatabaseTableBody');
+        if (!tbody) return;
+        
+        if (!res.ok || !data.users || data.users.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">No users found</td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = data.users.map(user => {
+            const walletShort = `${user.wallet.slice(0, 6)}...${user.wallet.slice(-4)}`;
+            const createdDate = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A';
+            const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never';
+            
+            return `
+                <tr>
+                    <td>
+                        <code style="font-size: 0.85rem;">${walletShort}</code>
+                        <button class="btn btn-sm btn-link text-primary p-0 ms-2" onclick="navigator.clipboard.writeText('${user.wallet}')" title="Copy full address">
+                            📋
+                        </button>
+                    </td>
+                    <td class="text-end"><strong>${formatNumberWithCommas(user.balance, 2)} USDC</strong></td>
+                    <td class="text-end">${formatNumberWithCommas(user.total_bets, 0)}</td>
+                    <td class="text-end">${formatNumberWithCommas(user.total_bet_amount, 2)} USDC</td>
+                    <td class="text-end">${formatNumberWithCommas(user.open_positions, 0)}</td>
+                    <td>${createdDate}</td>
+                    <td>${lastLogin}</td>
+                    <td class="text-end">
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-sm btn-primary" onclick="showCreditModalForUser('${user.wallet}')" title="Credit user">
+                                💸 Credit
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.wallet}')" title="Delete user (auto-sells positions)">
+                                🗑️ Delete
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Failed to load user database', e);
+        const tbody = document.getElementById('userDatabaseTableBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center py-4 text-danger">Error loading users: ${e.message}</td>
+                </tr>
+            `;
+        }
+    }
+}
+
+function showCreditModalForUser(wallet) {
+    // Pre-fill the credit modal with the wallet address
+    const walletInput = document.getElementById('creditWalletInput');
+    const modal = new bootstrap.Modal(document.getElementById('creditUserModal'));
+    if (walletInput) {
+        walletInput.value = wallet;
+    }
+    modal.show();
+}
+
+async function deleteUser(wallet) {
+    const walletShort = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+    const confirmMsg = `Are you sure you want to DELETE user ${walletShort}?\n\nThis will:\n• Automatically sell all open positions\n• Delete all bets\n• Remove user from database\n• Clear their balance\n\nThis action cannot be undone!`;
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/admin/users/${wallet}/delete`, {
+            method: 'DELETE'
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            alert(`✅ ${data.message}`);
+            // Reload user database
+            await loadUserDatabase();
+            // Reload admin stats
+            await loadAdminStats();
+        } else {
+            alert(`❌ Failed to delete user: ${data.error || data.message || 'Unknown error'}`);
+        }
+    } catch (e) {
+        console.error('Failed to delete user', e);
+        alert(`❌ Error deleting user: ${e.message}`);
+    }
+}
+
+// Make admin functions globally accessible
+window.loadUserDatabase = loadUserDatabase;
+window.deleteUser = deleteUser;
+window.showCreditModalForUser = showCreditModalForUser;
 
 // ========== ADMIN CREATE MARKET ==========
 function initAdminCreateMarket() {
@@ -1381,6 +1634,7 @@ async function handleAdminCreateMarket(e) {
     const imageUrl = document.getElementById('marketImageUrl').value.trim();
     const category = document.getElementById('marketCategory').value;
     const endDate = document.getElementById('marketEndDate').value;
+    const deployBlockchain = document.getElementById('deployBlockchain')?.checked || false;
     
     if (!question || !description || !category) {
         showMessage('Please fill in all required fields', 'error', 'createMessageContainer');
@@ -1388,9 +1642,14 @@ async function handleAdminCreateMarket(e) {
     }
     
     try {
-    const res = await fetch('/api/markets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        let endpoint = '/api/markets';
+        if (deployBlockchain) {
+            endpoint = '/api/admin/markets/blockchain';
+        }
+        
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 question,
                 description,
@@ -1401,14 +1660,18 @@ async function handleAdminCreateMarket(e) {
             })
         });
         
-    const body = await res.json();
+        const body = await res.json();
         
-    if (res.ok && body.success) {
-            showMessage('Market created successfully!', 'success', 'createMessageContainer');
+        if (res.ok && body.success) {
+            let message = 'Market created successfully!';
+            if (deployBlockchain && body.blockchain_tx_hash) {
+                message += `<br><small>Blockchain TX: <a href="${body.etherscan_url}" target="_blank">${body.blockchain_tx_hash.substring(0, 10)}...</a></small>`;
+            }
+            showMessage(message, 'success', 'createMessageContainer');
             setTimeout(() => {
                 window.location.href = '/admin';
-            }, 2000);
-    } else {
+            }, 3000);
+        } else {
             showMessage(body.message || 'Failed to create market', 'error', 'createMessageContainer');
         }
     } catch (e) {
@@ -1441,8 +1704,8 @@ function renderAdminMarkets(markets) {
     }
 
     container.innerHTML = markets.map(m => {
-        const yes = Number(m.yes_total || 0).toFixed(2);
-        const no = Number(m.no_total || 0).toFixed(2);
+        const yes = formatNumberWithCommas(Number(m.yes_total || 0), 2);
+        const no = formatNumberWithCommas(Number(m.no_total || 0), 2);
         const isResolved = m.status === 'resolved';
         const statusBadge = isResolved 
             ? `<span class="badge" style="background: var(--blue-primary)">Resolved: ${m.resolution}</span>`
@@ -1469,7 +1732,7 @@ function renderAdminMarkets(markets) {
                 <div>${statusBadge}</div>
                 </div>
             <div class="mb-3">
-                <strong>YES Pool:</strong> €${yes} | <strong>NO Pool:</strong> €${no} | <strong>Total Bets:</strong> ${m.bet_count}
+                <strong>YES Pool:</strong> ${yes} | <strong>NO Pool:</strong> ${no} | <strong>Total Bets:</strong> ${m.bet_count}
                     </div>
             <div class="d-flex gap-2">
                 ${resolveButtons}
@@ -1492,11 +1755,27 @@ async function adminResolveMarket(marketId, outcome) {
     });
     const body = await res.json();
         
-    if (res.ok && body.success) {
-            alert('Market resolved successfully!');
+        // Check if outcome exists (success) or error/message exists
+        if (res.ok && body.outcome) {
+            // Show detailed success message with payout info
+            let message = `✅ Market resolved as ${outcome}!`;
+            if (body.payouts_distributed && body.total_payout > 0) {
+                message += `\n\n💰 Payouts Distributed:\n`;
+                message += `  • Total: ${formatNumberWithCommas(body.total_payout, 2)} USDC\n`;
+                if (body.total_fees && body.total_fees > 0) {
+                    message += `  • Fees: ${formatNumberWithCommas(body.total_fees, 2)} USDC (2% on profits)\n`;
+                }
+                message += `  • Winners: ${body.winners_count} user(s)\n`;
+                message += `\nWinner balances have been automatically updated!`;
+            } else if (!body.payouts_distributed) {
+                message += `\n\n⚠️ Note: Payout distribution failed. You may need to manually credit winners.`;
+            } else {
+                message += `\n\n📊 No winning bets found for this market.`;
+            }
+            alert(message);
             await loadAdminMarkets();
     } else {
-        alert(body.message || 'Failed to resolve market');
+            alert(body.error || body.message || 'Failed to resolve market');
         }
     } catch (e) {
         alert('Error resolving market');
@@ -1510,16 +1789,25 @@ async function viewPayouts(marketId) {
         const data = await res.json();
         
         if (!res.ok) {
-            alert(data.error || 'Failed to load payouts');
+            alert(data.error || data.message || 'Failed to load payouts');
         return;
     }
         
+        // Handle case where payouts array might be empty or missing
+        const payouts = data.payouts || [];
+        const winningTotal = data.winning_total || 0;
+        const losingTotal = data.losing_total || 0;
+        
         let html = `
             <div class="mb-3">
-                <strong>Market Resolution:</strong> ${data.resolution}<br>
-                <strong>Winning Pool:</strong> €${data.winning_total.toFixed(2)}<br>
-                <strong>Losing Pool:</strong> €${data.losing_total.toFixed(2)}
+                <strong>Market Resolution:</strong> ${data.resolution || 'N/A'}<br>
+                <strong>Winning Pool:</strong> ${formatNumberWithCommas(winningTotal, 2)}<br>
+                <strong>Losing Pool:</strong> ${formatNumberWithCommas(losingTotal, 2)}
             </div>
+        `;
+        
+        if (payouts.length > 0) {
+            html += `
             <table class="table table-dark table-striped">
                 <thead>
                     <tr>
@@ -1532,24 +1820,38 @@ async function viewPayouts(marketId) {
                 <tbody>
         `;
         
-        data.payouts.forEach(p => {
-            const profitClass = p.profit >= 0 ? 'text-success' : 'text-danger';
-            const profitSign = p.profit >= 0 ? '+' : '';
+            payouts.forEach(p => {
+                const profit = p.profit || 0;
+                const profitClass = profit >= 0 ? 'text-success' : 'text-danger';
+                const profitSign = profit >= 0 ? '+' : '';
             html += `
                 <tr>
-                    <td><code>${p.wallet.slice(0,6)}...${p.wallet.slice(-4)}</code></td>
-                    <td>€${p.total_bet.toFixed(2)}</td>
-                    <td>€${p.payout.toFixed(2)}</td>
-                    <td class="${profitClass}"><strong>${profitSign}€${p.profit.toFixed(2)}</strong></td>
+                        <td><code>${p.wallet ? p.wallet.slice(0,6) + '...' + p.wallet.slice(-4) : 'N/A'}</code></td>
+                        <td>${formatNumberWithCommas(p.total_bet || 0, 2)}</td>
+                        <td>${formatNumberWithCommas(p.payout || 0, 2)}</td>
+                        <td class="${profitClass}"><strong>${profitSign}${formatNumberWithCommas(profit, 2)}</strong></td>
                 </tr>
             `;
         });
         
         html += `</tbody></table>`;
+        } else {
+            html += `<div class="alert alert-info">No bets placed on this market yet.</div>`;
+        }
         
-        document.getElementById('payoutModalBody').innerHTML = html;
-        const modal = new bootstrap.Modal(document.getElementById('payoutModal'));
+        const modalBody = document.getElementById('payoutModalBody');
+        if (modalBody) {
+            modalBody.innerHTML = html;
+            const modalElement = document.getElementById('payoutModal');
+            if (modalElement) {
+                const modal = new bootstrap.Modal(modalElement);
         modal.show();
+            } else {
+                alert('Modal element not found');
+            }
+        } else {
+            alert('Modal body element not found');
+        }
         
     } catch (e) {
         alert('Error loading payouts');
@@ -1633,7 +1935,7 @@ async function loadUserBalance() {
             
             // Show welcome message for new users
             if (data.is_new_user) {
-                showMessage(`Welcome! You've been credited with $${userBalance.toFixed(2)} fake crypto to start trading!`, 'success', 'tradingMessage');
+                showMessage(`Welcome! You've been credited with ${formatNumberWithCommas(userBalance, 2)} USDC to start trading!`, 'success', 'tradingMessage');
             }
         }
     } catch (e) {
@@ -1641,18 +1943,62 @@ async function loadUserBalance() {
     }
 }
 
+// Make function globally accessible
+window.clearCacheAndLogout = function() {
+    if (!confirm('Are you sure you want to clear all cache and logout? This will:\n\n• Clear all stored data (localStorage, sessionStorage)\n• Disconnect your wallet\n• Reset all app state\n• Reload the page')) {
+        return;
+    }
+    
+    // Clear all localStorage
+    localStorage.clear();
+    
+    // Clear all sessionStorage
+    sessionStorage.clear();
+    
+    // Reset global variables
+    currentAccount = null;
+    userBalance = 0.0;
+    allMarkets = [];
+    currentFilter = 'all';
+    
+    // Clear chatbot thread ID if exists
+    if (typeof chatThreadId !== 'undefined') {
+        chatThreadId = null;
+    }
+    
+    // Update UI
+    updateWalletUI();
+    
+    // Clear balance displays
+    const balanceElements = document.querySelectorAll('.user-balance, #userBalance, #userBalanceDisplay');
+    balanceElements.forEach(el => {
+        el.textContent = '';
+        el.style.display = 'none';
+    });
+    
+    // Clear wallet address display
+    const walletDisplay = document.getElementById('walletAddressDisplay');
+    if (walletDisplay) {
+        walletDisplay.textContent = '';
+        walletDisplay.style.display = 'none';
+    }
+    
+    // Reload page to clear all state
+    window.location.reload();
+};
+
 function updateBalanceDisplay() {
     // Update balance in trading UI
     const balanceElements = document.querySelectorAll('.user-balance, #userBalance');
     balanceElements.forEach(el => {
-        el.textContent = `$${userBalance.toFixed(2)}`;
+        el.textContent = `${formatNumberWithCommas(userBalance, 2)} USDC`;
     });
     
     // Update balance in navbar - show when wallet is connected
     const balanceDisplay = document.getElementById('userBalanceDisplay');
     if (balanceDisplay) {
         if (currentAccount) {
-            balanceDisplay.textContent = `Balance: $${userBalance.toFixed(2)}`;
+            balanceDisplay.innerHTML = `<span style="font-weight: 600;">${formatNumberWithCommas(userBalance, 2)} <span style="color: var(--blue-primary);">USDC</span></span>`;
             balanceDisplay.style.display = 'inline-block';
         } else {
             balanceDisplay.style.display = 'none';
@@ -1662,7 +2008,7 @@ function updateBalanceDisplay() {
     // Update balance in market detail page trading card
     const balanceSmall = document.querySelector('small.text-muted');
     if (balanceSmall && balanceSmall.textContent.includes('Balance:')) {
-        balanceSmall.innerHTML = `Balance: <span id="userBalance">$${userBalance.toFixed(2)}</span>`;
+        balanceSmall.innerHTML = `Balance: <span id="userBalance">${formatNumberWithCommas(userBalance, 2)} USDC</span>`;
     }
 }
 
@@ -1759,7 +2105,10 @@ function updateWalletUI() {
 
 function disconnectWallet() {
     currentAccount = null;
+    // Don't reset userBalance to 0 - it's stored in database and will be loaded when reconnecting
+    userBalance = 0.0; // Only reset display, actual balance stays in database
     updateWalletUI();
+    updateBalanceDisplay();
     
     // Close dropdown
     const walletDropdown = document.getElementById('walletDropdown');
@@ -1768,7 +2117,7 @@ function disconnectWallet() {
     }
     
     // Show message
-    showMessage('Wallet disconnected', 'info', 'tradingMessage');
+    showMessage('Wallet disconnected. Your balance is saved and will be restored when you reconnect.', 'info', 'tradingMessage');
     
     // Reload page data if on my-bets page
     if (window.location.pathname === '/my-bets') {
@@ -1777,9 +2126,7 @@ function disconnectWallet() {
 }
 
 // ========== UTILITY FUNCTIONS ==========
-function escapeHtml(str) {
-    return (str || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
-}
+// (escapeHtml is at top of file)
 
 function showMessage(message, type, containerId) {
     const container = document.getElementById(containerId);
