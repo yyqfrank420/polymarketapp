@@ -111,6 +111,26 @@ def init_db():
             )
         ''')
         
+        # KYC verifications table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS kyc_verifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','verified','rejected')),
+                full_name TEXT,
+                date_of_birth TEXT,
+                document_number TEXT,
+                nationality TEXT,
+                document_type TEXT,
+                is_official_document BOOLEAN,
+                verification_notes TEXT,
+                verified_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(wallet) REFERENCES users(wallet)
+            )
+        ''')
+        
         conn.commit()
     finally:
         conn.close()

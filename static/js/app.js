@@ -27,6 +27,8 @@ document.addEventListener('DOMContentLoaded', function() {
     } else if (path === '/resolved') {
         // Resolved markets page is handled by inline script in template
         tryInitWallet();
+    } else if (path === '/profile') {
+        initProfilePage();
     } else if (path === '/admin') {
         initAdminDashboard();
     } else if (path === '/admin/create-market') {
@@ -342,16 +344,16 @@ async function loadActivityFeed() {
             
         } else {
             feedContainer.innerHTML = `
-                <div class="text-center text-muted py-5">
-                    <p>No recent activity yet. Be the first to place a bet!</p>
+                <div class="text-center py-5" style="color: var(--text-secondary);">
+                    <p style="font-size: 1rem; font-weight: 500; margin: 0;">No recent activity yet. Be the first to place a bet!</p>
                 </div>
             `;
         }
     } catch (error) {
         console.error('Failed to load activity feed:', error);
         feedContainer.innerHTML = `
-            <div class="text-center text-muted py-5">
-                <p>Unable to load activity feed</p>
+            <div class="text-center py-5" style="color: var(--text-secondary);">
+                <p style="font-size: 1rem; font-weight: 500; margin: 0;">Unable to load activity feed</p>
             </div>
         `;
     }
@@ -1873,6 +1875,12 @@ async function connectWallet() {
         // Load balance on connect (auto-credits if new user)
         await loadUserBalance();
         
+        // Update profile page if we're on it
+        if (window.location.pathname === '/profile') {
+            updateProfileDisplay();
+            loadKYCStatus();
+        }
+        
         // Load user bets if on my-bets page
         if (window.location.pathname === '/my-bets') {
             loadUserBets();
@@ -1893,6 +1901,12 @@ async function tryInitWallet() {
                 // Load balance on init
                 await loadUserBalance();
                 
+                // Update profile page if we're on it
+                if (window.location.pathname === '/profile') {
+                    updateProfileDisplay();
+                    loadKYCStatus();
+                }
+                
                 // Load user bets if on my-bets page
                 if (window.location.pathname === '/my-bets') {
                     loadUserBets();
@@ -1905,6 +1919,14 @@ async function tryInitWallet() {
                 // Load balance when account changes
                 if (currentAccount) {
                     await loadUserBalance();
+                }
+                
+                // Update profile page if we're on it
+                if (window.location.pathname === '/profile') {
+                    updateProfileDisplay();
+                    if (currentAccount) {
+                        loadKYCStatus();
+                    }
                 }
                 
                 // Reload bets if on my-bets page
@@ -1998,11 +2020,29 @@ function updateBalanceDisplay() {
     const balanceDisplay = document.getElementById('userBalanceDisplay');
     if (balanceDisplay) {
         if (currentAccount) {
-            balanceDisplay.innerHTML = `<span style="font-weight: 600;">${formatNumberWithCommas(userBalance, 2)} <span style="color: var(--blue-primary);">USDC</span></span>`;
-            balanceDisplay.style.display = 'inline-block';
+            balanceDisplay.innerHTML = `
+                <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
+                    <path d="M3 4.5L6 7.5L9 4.5"/>
+                </svg>
+            `;
+            balanceDisplay.style.display = 'inline-flex';
+            balanceDisplay.style.cursor = 'pointer';
         } else {
             balanceDisplay.style.display = 'none';
         }
+    }
+    
+    // Update balance in profile page
+    const profileBalance = document.getElementById('profileBalance');
+    if (profileBalance) {
+        profileBalance.innerHTML = `
+            <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
+                <path d="M3 4.5L6 7.5L9 4.5"/>
+            </svg>
+        `;
+        profileBalance.style.cursor = 'pointer';
     }
     
     // Update balance in market detail page trading card
@@ -2013,20 +2053,57 @@ function updateBalanceDisplay() {
 }
 
 function updateWalletUI() {
-    const display = document.getElementById('walletAddressDisplay');
     const btn = document.getElementById('connectWalletBtn');
-    if (!display || !btn) return;
+    const connectedGroup = document.getElementById('walletConnectedGroup');
+    
+    if (!btn) return;
     
     if (currentAccount) {
-        const short = `${currentAccount.slice(0,6)}...${currentAccount.slice(-4)}`;
+        // Show connected group (only balance, no wallet address)
+        if (connectedGroup) {
+            connectedGroup.style.display = 'flex';
+        }
         
-        // Create wallet dropdown if it doesn't exist
-        let walletDropdown = document.getElementById('walletDropdown');
-        if (!walletDropdown) {
-            walletDropdown = document.createElement('div');
-            walletDropdown.id = 'walletDropdown';
-            walletDropdown.className = 'wallet-dropdown';
-            walletDropdown.innerHTML = `
+        // Hide connect button
+        btn.style.display = 'none';
+        
+        // Create and setup dropdown
+        createWalletDropdown();
+    } else {
+        // Hide connected group
+        if (connectedGroup) {
+            connectedGroup.style.display = 'none';
+        }
+        
+        // Remove dropdown if exists
+        const walletDropdown = document.getElementById('walletDropdown');
+        if (walletDropdown) {
+            walletDropdown.remove();
+        }
+        
+        btn.style.display = 'inline-block';
+        btn.innerHTML = '<span class="wallet-icon">🔗</span> Connect Wallet';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.onclick = connectWallet;
+    }
+    
+    // Update balance display when wallet state changes
+    updateBalanceDisplay();
+}
+
+function createWalletDropdown() {
+    // Remove existing dropdown if any
+    const existingDropdown = document.getElementById('walletDropdown');
+    if (existingDropdown) {
+        existingDropdown.remove();
+    }
+    
+    // Create new dropdown
+    const dropdown = document.createElement('div');
+    dropdown.id = 'walletDropdown';
+    dropdown.className = 'wallet-dropdown';
+    dropdown.innerHTML = `
                 <div class="wallet-dropdown-header">
                     <span class="wallet-dropdown-label">Connected Wallet</span>
                     <span class="wallet-dropdown-address">${currentAccount}</span>
@@ -2037,70 +2114,32 @@ function updateWalletUI() {
                     <span>Disconnect</span>
                 </button>
             `;
-            document.body.appendChild(walletDropdown);
-        }
-        
-        // Update dropdown with current address
-        const addressSpan = walletDropdown.querySelector('.wallet-dropdown-address');
-        if (addressSpan) {
-            addressSpan.textContent = currentAccount;
-        }
-        
-        // Position dropdown relative to wallet address display
-        const updateDropdownPosition = () => {
-            const rect = display.getBoundingClientRect();
-            walletDropdown.style.position = 'fixed';
-            walletDropdown.style.top = `${rect.bottom + 8}px`;
-            walletDropdown.style.right = `${window.innerWidth - rect.right}px`;
-        };
-        
-        // Make display clickable
-        display.textContent = short;
-        display.style.cursor = 'pointer';
-        display.classList.add('wallet-address-clickable');
-        display.onclick = (e) => {
+    
+    document.body.appendChild(dropdown);
+    
+    // Make balance display clickable to toggle dropdown
+    const balanceDisplay = document.getElementById('userBalanceDisplay');
+    if (balanceDisplay) {
+        balanceDisplay.style.cursor = 'pointer';
+        balanceDisplay.onclick = (e) => {
             e.stopPropagation();
-            updateDropdownPosition();
-            walletDropdown.classList.toggle('show');
+            const rect = balanceDisplay.getBoundingClientRect();
+            dropdown.style.position = 'fixed';
+            dropdown.style.top = `${rect.bottom + 8}px`;
+            dropdown.style.right = `${window.innerWidth - rect.right}px`;
+            dropdown.classList.toggle('show');
         };
+    }
         
         // Close dropdown when clicking outside
         const closeDropdownOnOutsideClick = (e) => {
-            if (!walletDropdown.contains(e.target) && e.target !== display) {
-                walletDropdown.classList.remove('show');
+        if (!dropdown.contains(e.target) && e.target !== balanceDisplay) {
+            dropdown.classList.remove('show');
             }
         };
         
-        // Remove old listener if exists
         document.removeEventListener('click', closeDropdownOnOutsideClick);
         document.addEventListener('click', closeDropdownOnOutsideClick);
-        
-        // Update position on scroll/resize
-        window.addEventListener('scroll', updateDropdownPosition);
-        window.addEventListener('resize', updateDropdownPosition);
-        
-        btn.innerHTML = '<span class="wallet-icon">✅</span> Connected';
-        btn.disabled = true;
-        btn.style.opacity = '0.7';
-    } else {
-        display.textContent = '';
-        display.style.cursor = 'default';
-        display.classList.remove('wallet-address-clickable');
-        display.onclick = null;
-        
-        // Remove dropdown if exists
-        const walletDropdown = document.getElementById('walletDropdown');
-        if (walletDropdown) {
-            walletDropdown.remove();
-        }
-        
-        btn.innerHTML = '<span class="wallet-icon">🔗</span> Connect Wallet';
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    }
-    
-    // Update balance display when wallet state changes
-    updateBalanceDisplay();
 }
 
 function disconnectWallet() {
@@ -2109,6 +2148,11 @@ function disconnectWallet() {
     userBalance = 0.0; // Only reset display, actual balance stays in database
     updateWalletUI();
     updateBalanceDisplay();
+    
+    // Update profile page if we're on it
+    if (window.location.pathname === '/profile') {
+        updateProfileDisplay();
+    }
     
     // Close dropdown
     const walletDropdown = document.getElementById('walletDropdown');
@@ -2146,3 +2190,373 @@ function showMessage(message, type, containerId) {
         }, 5000);
     }
 }
+
+// ========== PROFILE / KYC PAGE ==========
+function initProfilePage() {
+    console.log('Initializing profile page');
+    
+    // Setup wallet connection
+    const connectBtn = document.getElementById('connectWalletBtn');
+    if (connectBtn) {
+        connectBtn.addEventListener('click', connectWallet);
+    }
+    
+    // Setup KYC submit button - use event delegation for dynamic buttons
+    document.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'kycSubmitBtn') {
+            e.preventDefault();
+            openKYCModal();
+        }
+    });
+    
+    // Also setup the button if it exists on page load
+    const kycSubmitBtn = document.getElementById('kycSubmitBtn');
+    if (kycSubmitBtn) {
+        kycSubmitBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openKYCModal();
+        });
+    }
+    
+    // Initialize profile display based on wallet connection
+    updateProfileDisplay();
+    
+    // Load KYC status if wallet is connected
+    if (currentAccount) {
+        loadKYCStatus();
+    }
+    
+    // Setup file input handler
+    const fileInput = document.getElementById('kycFileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', handleKYCFileSelect);
+    }
+    
+    // Setup upload button
+    const uploadBtn = document.getElementById('kycUploadBtn');
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', uploadKYCDocument);
+    }
+    
+    // Setup cancel button
+    const cancelBtn = document.getElementById('kycCancelBtn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', cancelKYCUpload);
+    }
+    
+    // Setup retry button
+    const retryBtn = document.getElementById('kycRetryBtn');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', resetKYCUpload);
+    }
+}
+
+function updateProfileDisplay() {
+    const profileWallet = document.getElementById('profileWalletAddress');
+    const profileBalance = document.getElementById('profileBalance');
+    
+    if (!currentAccount) {
+        // Update profile display for disconnected state
+        if (profileWallet) profileWallet.textContent = 'Not connected';
+        if (profileBalance) {
+            profileBalance.innerHTML = `
+                <span>0.00 USDC</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
+                    <path d="M3 4.5L6 7.5L9 4.5"/>
+                </svg>
+            `;
+        }
+    } else {
+        // Update wallet and balance display
+        if (profileWallet) {
+            profileWallet.textContent = currentAccount.slice(0, 6) + '...' + currentAccount.slice(-4);
+        }
+        if (profileBalance) {
+            profileBalance.innerHTML = `
+                <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
+                    <path d="M3 4.5L6 7.5L9 4.5"/>
+                </svg>
+            `;
+            profileBalance.style.cursor = 'pointer';
+        }
+    }
+}
+
+function openKYCModal() {
+    const modal = document.getElementById('kycUploadModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeKYCModal() {
+    const modal = document.getElementById('kycUploadModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        resetKYCUpload();
+    }
+}
+
+async function loadKYCStatus() {
+    const profileWallet = document.getElementById('profileWalletAddress');
+    const profileBalance = document.getElementById('profileBalance');
+    const profileKYCStatus = document.getElementById('profileKYCStatus');
+    const kycNotVerified = document.getElementById('kycNotVerified');
+    const kycVerified = document.getElementById('kycVerified');
+    const kycRejected = document.getElementById('kycRejected');
+    
+    if (!currentAccount) {
+        // Update profile display for disconnected state
+        if (profileWallet) profileWallet.textContent = 'Not connected';
+        if (profileBalance) profileBalance.textContent = '0.00 USDC';
+        if (profileKYCStatus) profileKYCStatus.innerHTML = '<span class="badge bg-secondary">Not Submitted</span>';
+        // Keep KYC section visible even when not connected
+        return;
+    }
+    
+    try {
+        // Update wallet and balance display
+        if (profileWallet) {
+            profileWallet.textContent = currentAccount.slice(0, 6) + '...' + currentAccount.slice(-4);
+        }
+        if (profileBalance) {
+            profileBalance.innerHTML = `
+                <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
+                    <path d="M3 4.5L6 7.5L9 4.5"/>
+                </svg>
+            `;
+            profileBalance.style.cursor = 'pointer';
+        }
+        
+        // Fetch KYC status
+        const response = await fetch(`/api/kyc/status?wallet=${currentAccount}`);
+        const data = await response.json();
+        
+        if (data.status === 'not_submitted') {
+            // Show upload form
+            if (kycNotVerified) kycNotVerified.style.display = 'block';
+            if (kycVerified) kycVerified.style.display = 'none';
+            if (kycRejected) kycRejected.style.display = 'none';
+            if (profileKYCStatus) {
+                profileKYCStatus.innerHTML = `
+                    <span class="badge bg-secondary" style="font-size: 0.875rem; padding: 0.5rem 0.75rem;">Not Submitted</span>
+                    <button id="kycSubmitBtn" class="btn btn-primary" style="font-size: 0.875rem; padding: 0.5rem 1rem; height: auto;">Submit Now</button>
+                `;
+                // Event listener will be handled by document-level delegation
+            }
+        } else if (data.status === 'verified') {
+            // Show verified status with re-verify button
+            if (profileKYCStatus) {
+                profileKYCStatus.innerHTML = `
+                    <span class="badge bg-success" style="font-size: 0.875rem; padding: 0.5rem 0.75rem;">✓ Verified</span>
+                    <button id="kycSubmitBtn" class="btn btn-outline-primary" style="font-size: 0.875rem; padding: 0.5rem 1rem; height: auto;">Re-verify</button>
+                `;
+            }
+            
+            // Don't show alert on status load - only on new verification
+            // The alert is handled in uploadKYCDocument function
+            
+            // Populate verified info (if elements exist)
+            const kycFullName = document.getElementById('kycFullName');
+            const kycDOB = document.getElementById('kycDOB');
+            const kycNationality = document.getElementById('kycNationality');
+            const kycDocType = document.getElementById('kycDocType');
+            const kycDocNumber = document.getElementById('kycDocNumber');
+            
+            if (kycFullName) kycFullName.textContent = data.data.full_name || '—';
+            if (kycDOB) kycDOB.textContent = data.data.date_of_birth || '—';
+            if (kycNationality) kycNationality.textContent = data.data.nationality || '—';
+            if (kycDocType) {
+                kycDocType.textContent = (data.data.document_type || '—').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+            }
+            if (kycDocNumber) kycDocNumber.textContent = data.data.document_number || '—';
+        } else if (data.status === 'rejected') {
+            // Show rejection
+            if (profileKYCStatus) {
+                profileKYCStatus.innerHTML = `
+                    <span class="badge bg-danger">✕ Rejected</span>
+                    <button id="kycSubmitBtn" class="btn btn-primary" style="font-size: 0.875rem; padding: 0.5rem 1rem; height: auto;">Try Again</button>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load KYC status:', error);
+    }
+}
+
+function handleKYCFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.match('image/(jpeg|jpg|png)')) {
+        alert('Please upload a JPEG or PNG image');
+        event.target.value = '';
+        return;
+    }
+    
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        alert('Image size must be less than 5MB');
+        event.target.value = '';
+        return;
+    }
+    
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        document.getElementById('kycPreviewImg').src = e.target.result;
+        document.getElementById('kycImagePreview').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+}
+
+async function uploadKYCDocument() {
+    if (!currentAccount) {
+        alert('Please connect your wallet first');
+        closeKYCModal();
+        return;
+    }
+    
+    const fileInput = document.getElementById('kycFileInput');
+    const file = fileInput?.files[0];
+    
+    if (!file) {
+        alert('Please select a document to upload');
+        return;
+    }
+    
+    // Show progress
+    const imagePreview = document.getElementById('kycImagePreview');
+    const uploadProgress = document.getElementById('kycUploadProgress');
+    if (imagePreview) imagePreview.style.display = 'none';
+    if (uploadProgress) uploadProgress.style.display = 'block';
+    
+    try {
+        // Convert image to base64
+        const base64 = await convertImageToBase64(file);
+        
+        // Upload to API (API will handle data URL prefix stripping)
+        const response = await fetch('/api/kyc/upload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                wallet: currentAccount,
+                document_image: base64
+            })
+        });
+        
+        // Parse response
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            throw new Error(`Server returned invalid response (Status: ${response.status})`);
+        }
+        
+        // Hide progress
+        if (uploadProgress) uploadProgress.style.display = 'none';
+        
+        // Handle response based on status code and data
+        if (!response.ok) {
+            // HTTP error status
+            const errorMsg = data.error || data.message || `Upload failed (HTTP ${response.status})`;
+            throw new Error(errorMsg);
+        }
+        
+        // Handle response
+        if (data.status === 'verified') {
+            // Close modal
+            closeKYCModal();
+            
+            // Show surprise reward message
+            const oldBalance = userBalance;
+            await loadUserBalance();
+            const rewardAmount = userBalance - oldBalance;
+            
+            if (rewardAmount > 0) {
+                alert(`✅ Identity verified successfully!\n\n🎉 Surprise! You've received ${formatNumberWithCommas(rewardAmount, 2)} USDC as a verification bonus!`);
+            } else {
+                alert('✅ Identity verified successfully!');
+            }
+            
+            // Reload status and update display
+            await loadKYCStatus();
+            updateProfileDisplay();
+        } else if (data.status === 'rejected') {
+            // Show rejection message
+            const rejectionReason = data.reason || data.message || 'Verification failed. Please try again with a clear photo of your official ID.';
+            alert(`❌ Verification Failed\n\n${rejectionReason}`);
+            
+            // Reset upload form
+            if (fileInput) fileInput.value = '';
+            if (imagePreview) imagePreview.style.display = 'none';
+            if (uploadProgress) uploadProgress.style.display = 'none';
+        } else if (data.error || data.message) {
+            // Show error message
+            const errorMsg = data.error || data.message || 'Unknown error occurred';
+            alert(`❌ Error: ${errorMsg}`);
+            
+            // Reset upload form
+            if (fileInput) fileInput.value = '';
+            if (imagePreview) imagePreview.style.display = 'none';
+            if (uploadProgress) uploadProgress.style.display = 'none';
+        } else {
+            // Unknown response format
+            console.error('Unexpected API response:', data);
+            alert('❌ Unexpected response from server. Please try again.');
+            if (uploadProgress) uploadProgress.style.display = 'none';
+            if (imagePreview) imagePreview.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('KYC upload error:', error);
+        
+        // Hide progress
+        if (uploadProgress) uploadProgress.style.display = 'none';
+        
+        // Show user-friendly error message
+        const errorMessage = error.message || 'Failed to upload document. Please check your connection and try again.';
+        alert(`❌ Upload Failed\n\n${errorMessage}`);
+        
+        // Reset upload form
+        if (fileInput) fileInput.value = '';
+        if (imagePreview) imagePreview.style.display = 'block';
+    }
+}
+
+function cancelKYCUpload() {
+    // Reset file input and hide preview
+    document.getElementById('kycFileInput').value = '';
+    document.getElementById('kycImagePreview').style.display = 'none';
+}
+
+function resetKYCUpload() {
+    // Reset to upload form
+    document.getElementById('kycRejected').style.display = 'none';
+    document.getElementById('kycNotVerified').style.display = 'block';
+    document.getElementById('kycFileInput').value = '';
+}
+
+function convertImageToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            // Return the full data URL - the API will handle stripping the prefix
+            resolve(reader.result);
+        };
+        reader.onerror = (error) => {
+            reject(new Error('Failed to read file: ' + error));
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+// Make functions globally accessible
+window.initProfilePage = initProfilePage;
+window.loadKYCStatus = loadKYCStatus;

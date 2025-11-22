@@ -4,6 +4,9 @@ let chatOpen = false;
 
 // Initialize chatbot
 function initChatbot() {
+    // Ensure chatbot starts closed
+    chatOpen = false;
+    
     // Load thread ID from localStorage
     chatThreadId = localStorage.getItem('chatbot_thread_id');
     
@@ -12,6 +15,12 @@ function initChatbot() {
     
     // Setup event listeners
     setupChatbotListeners();
+    
+    // Ensure chatbot window is hidden on init
+    const chatWindow = document.getElementById('chatbot-window');
+    const toggle = document.getElementById('chatbot-toggle');
+    if (chatWindow) chatWindow.style.display = 'none';
+    if (toggle) toggle.style.display = 'flex';
 }
 
 function createChatbotUI() {
@@ -71,23 +80,33 @@ function setupChatbotListeners() {
 }
 
 function toggleChatbot() {
-    const window = document.getElementById('chatbot-window');
+    const chatWindow = document.getElementById('chatbot-window');
     const toggle = document.getElementById('chatbot-toggle');
     
-    chatOpen = !chatOpen;
+    if (!chatWindow || !toggle) return;
     
     if (chatOpen) {
-        window.style.display = 'flex';
+        // Closing chatbot
+        chatOpen = false;
+        chatWindow.style.display = 'none';
+        toggle.style.display = 'flex';
+    } else {
+        // Opening chatbot
+        chatOpen = true;
+        chatWindow.style.display = 'flex';
         toggle.style.display = 'none';
-        document.getElementById('chatbot-input')?.focus();
+        
+        // Focus input
+        const input = document.getElementById('chatbot-input');
+        if (input) {
+            setTimeout(() => input.focus(), 100);
+        }
         
         // Load welcome message if no messages
-        if (document.getElementById('chatbot-messages').children.length === 0) {
+        const messagesContainer = document.getElementById('chatbot-messages');
+        if (messagesContainer && messagesContainer.children.length === 0) {
             addMessage('assistant', 'Hi! I can help you check market odds, place bets, view your portfolio, and get news. What would you like to know?');
         }
-    } else {
-        window.style.display = 'none';
-        toggle.style.display = 'flex';
     }
 }
 

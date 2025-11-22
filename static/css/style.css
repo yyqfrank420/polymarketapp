@@ -942,24 +942,73 @@ body.dark-mode {
     border-top: 1px solid var(--border-color);
 }
 
+.activity-feed-section .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
 .activity-feed-header {
-    padding: 0 1rem;
+    padding: 0;
+    margin-bottom: 2rem;
 }
 
 .activity-feed-title {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
     font-weight: 700;
     color: var(--text-primary);
     margin: 0;
+    letter-spacing: -0.5px;
 }
 
 .activity-status {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     font-size: 0.9rem;
+    font-weight: 600;
+    background: rgba(0, 217, 163, 0.1);
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    border: 1px solid rgba(0, 217, 163, 0.2);
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    background: var(--green-yes);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+}
+
+.activity-feed {
+    min-height: 200px;
+}
+
+.activity-feed .text-muted {
+    color: var(--text-secondary) !important;
+    font-size: 1rem;
     font-weight: 500;
+}
+
+.activity-feed .text-center {
+    padding: 3rem 1rem;
+}
+
+.activity-feed .spinner-border {
+    color: var(--blue-primary);
 }
 
 .status-indicator {
@@ -2108,4 +2157,281 @@ body.dark-mode {
     .filter-btn {
         white-space: nowrap;
     }
+}
+
+/* ========== PROFILE PAGE STYLES ========== */
+.profile-card {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.profile-section-title {
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+    font-size: 1.5rem;
+    letter-spacing: -0.5px;
+}
+
+.profile-info-box {
+    background: rgba(20, 24, 36, 0.6);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: all 0.3s ease;
+}
+
+.profile-info-box:hover {
+    border-color: var(--border-light);
+    background: rgba(20, 24, 36, 0.8);
+}
+
+.profile-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.profile-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.profile-wallet-text {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Courier New', monospace;
+    font-size: 0.95rem;
+    word-break: break-all;
+    color: var(--text-primary);
+}
+
+.profile-balance-text {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Courier New', monospace;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.3px;
+    transition: opacity 0.2s ease;
+}
+
+.profile-balance-text:hover {
+    opacity: 0.8;
+}
+
+.profile-balance-text svg {
+    transition: transform 0.2s ease;
+}
+
+.profile-balance-text:hover svg {
+    transform: translateY(2px);
+}
+
+/* Professional Wallet Balance Display - Simplified */
+.wallet-balance {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Courier New', monospace;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: opacity 0.2s ease;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+}
+
+.wallet-balance:hover {
+    opacity: 0.8;
+}
+
+.wallet-balance svg {
+    width: 12px;
+    height: 12px;
+    opacity: 0.6;
+    transition: transform 0.2s ease;
+}
+
+.wallet-balance:hover svg {
+    transform: translateY(2px);
+}
+
+/* Connected Button - Professional Style */
+.btn-wallet:disabled {
+    background: linear-gradient(135deg, rgba(0, 217, 163, 0.15) 0%, rgba(0, 217, 163, 0.08) 100%);
+    color: var(--green-yes);
+    border: 1px solid rgba(0, 217, 163, 0.3);
+    cursor: pointer;
+    font-weight: 700;
+    position: relative;
+}
+
+.btn-wallet:disabled::before {
+    content: '✓';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: var(--green-yes);
+    color: white;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-right: 0.5rem;
+}
+
+.btn-wallet:disabled .wallet-icon {
+    display: none;
+}
+
+/* Wallet Connected Group */
+#walletConnectedGroup {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* KYC Modal Styles */
+.kyc-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.kyc-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+}
+
+.kyc-modal-content {
+    position: relative;
+    background: var(--bg-card);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-color);
+    z-index: 1;
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.kyc-modal-header {
+    padding: 24px 24px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.kyc-modal-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.kyc-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 28px;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    line-height: 1;
+    padding: 0;
+}
+
+.kyc-modal-close:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.kyc-modal-body {
+    padding: 24px;
+}
+
+.kyc-modal-description {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 24px;
+    line-height: 1.6;
+}
+
+.kyc-upload-area {
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    transition: all 0.2s ease;
+    background: var(--bg-secondary);
+}
+
+.kyc-upload-area:hover {
+    border-color: var(--blue-primary);
+    background: rgba(76, 154, 255, 0.05);
+}
+
+.kyc-upload-label {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    color: var(--blue-primary);
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.kyc-upload-label svg {
+    width: 32px;
+    height: 32px;
+    stroke-width: 2;
+}
+
+.kyc-upload-hint {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.kyc-preview-img {
+    width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
 }

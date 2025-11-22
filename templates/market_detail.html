@@ -36,13 +36,17 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/my-bets">Portfolio</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/profile">Profile</a>
+                    </li>
                 </ul>
                 <div class="d-flex align-items-center gap-3">
                     <button id="connectWalletBtn" class="btn btn-wallet">
                         <span class="wallet-icon">🔗</span> Connect Wallet
                     </button>
-                    <span id="walletAddressDisplay" class="wallet-address"></span>
-                    <span id="userBalanceDisplay" class="wallet-balance ms-2" style="display: none;">Balance: $0.00</span>
+                    <div id="walletConnectedGroup" style="display: none;" class="d-flex align-items-center gap-2">
+                        <div id="userBalanceDisplay" class="wallet-balance">0 USDC</div>
+                    </div>
                 </div>
             </div>
         </div>

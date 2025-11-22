@@ -459,5 +459,219 @@ def chat():
         logger.error(f'Chat error: {str(e)}')
         return standard_error_response(f'Chat failed: {str(e)}', 500)
 
+# ========== KYC API (Microservice Integration) ==========
+@api_bp.route('/kyc/upload', methods=['POST'])
+def upload_kyc_document():
+    """Upload and verify identity document using KYC microservice"""
+    try:
+        data = request.get_json() or {}
+        wallet = (data.get('wallet') or '').strip()
+        document_image = (data.get('document_image') or '').strip()
+        
+        # Validate wallet address
+        if not validate_wallet_address(wallet):
+            return standard_error_response('Invalid wallet address', 400)
+        
+        # Validate image data presence
+        if not document_image:
+            return standard_error_response('Document image is required', 400)
+        
+        # Normalize wallet address to lowercase for consistent storage/lookup
+        wallet = wallet.lower()
+        
+        # Check if already verified - allow re-verification but track if reward should be given
+        conn = get_db()
+        already_verified = False
+        try:
+            cursor = conn.cursor()
+            # Use LOWER() for case-insensitive lookup
+            cursor.execute('SELECT status FROM kyc_verifications WHERE LOWER(wallet)=?', (wallet,))
+            existing = cursor.fetchone()
+            
+            if existing and existing['status'] == 'verified':
+                already_verified = True
+                logger.info(f'Re-verification attempt for already verified wallet {wallet[:10]}... (no reward will be given)')
+        finally:
+            pass
+        
+        # Call KYC microservice for verification
+        from services.kyc_microservice import get_kyc_microservice
+        kyc_microservice = get_kyc_microservice()
+        
+        if not kyc_microservice.is_configured():
+            return standard_error_response('KYC service temporarily unavailable', 503)
+        
+        # Verify document using microservice
+        result = kyc_microservice.verify_document(document_image)
+        
+        # Handle microservice errors
+        if not result.get('success'):
+            error_code = result.get('error_code', 'UNKNOWN_ERROR')
+            error_message = result.get('error', 'Verification failed')
+            
+            # Map error codes to HTTP status codes
+            status_code_map = {
+                'INVALID_BASE64': 400,
+                'INVALID_IMAGE': 400,
+                'SERVICE_UNAVAILABLE': 503,
+                'INTERNAL_ERROR': 500
+            }
+            
+            status_code = status_code_map.get(error_code, 400)
+            
+            logger.warning(f'KYC microservice error for wallet {wallet[:10]}...: {error_code} - {error_message}')
+            return standard_error_response(error_message, status_code)
+        
+        # Extract AI verification result
+        ai_result = result.get('data', {})
+        
+        # Determine if verification successful
+        # Strict criteria: must be official document with high confidence and all required fields
+        is_verified = (
+            ai_result.get('is_official_document', False) and
+            ai_result.get('confidence') == 'high' and
+            ai_result.get('full_name') and
+            ai_result.get('date_of_birth') and
+            ai_result.get('document_number') and
+            ai_result.get('nationality')
+        )
+        
+        # Update database with transaction safety
+        with db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            if is_verified:
+                # Insert or update KYC record as verified
+                cursor.execute('''
+                    INSERT INTO kyc_verifications (
+                        wallet, status, full_name, date_of_birth, document_number,
+                        nationality, document_type, is_official_document,
+                        verification_notes, verified_at, updated_at
+                    ) VALUES (?, 'verified', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(wallet) DO UPDATE SET
+                        status='verified',
+                        full_name=excluded.full_name,
+                        date_of_birth=excluded.date_of_birth,
+                        document_number=excluded.document_number,
+                        nationality=excluded.nationality,
+                        document_type=excluded.document_type,
+                        is_official_document=excluded.is_official_document,
+                        verification_notes=excluded.verification_notes,
+                        verified_at=CURRENT_TIMESTAMP,
+                        updated_at=CURRENT_TIMESTAMP
+                ''', (
+                    wallet,
+                    ai_result.get('full_name', ''),
+                    ai_result.get('date_of_birth', ''),
+                    ai_result.get('document_number', ''),
+                    ai_result.get('nationality', ''),
+                    ai_result.get('document_type', ''),
+                    1 if ai_result.get('is_official_document') else 0,
+                    ai_result.get('verification_notes', '')
+                ))
+                
+                # Credit user with KYC reward ONLY if not already verified
+                reward_given = False
+                if not already_verified:
+                    update_user_balance(wallet, Config.KYC_REWARD_AMOUNT, 'add')
+                    reward_given = True
+                    logger.info(f'KYC verified for wallet {wallet[:10]}..., credited {Config.KYC_REWARD_AMOUNT} USDC')
+                else:
+                    logger.info(f'KYC re-verified for wallet {wallet[:10]}... (no reward - already verified previously)')
+                
+                return jsonify({
+                    'status': 'verified',
+                    'message': f'Identity verified!{" " + str(Config.KYC_REWARD_AMOUNT) + " USDC credited to your account." if reward_given else " (Re-verification - no reward given)"}',
+                    'reward_given': reward_given,
+                    'data': {
+                        'full_name': ai_result.get('full_name', ''),
+                        'date_of_birth': ai_result.get('date_of_birth', ''),
+                        'document_number': ai_result.get('document_number', ''),
+                        'nationality': ai_result.get('nationality', ''),
+                        'document_type': ai_result.get('document_type', '')
+                    }
+                }), 200
+            else:
+                # Insert or update KYC record as rejected
+                rejection_reason = ai_result.get('verification_notes', 'Document verification failed')
+                
+                # Provide user-friendly rejection reasons
+                if not ai_result.get('is_official_document'):
+                    rejection_reason = "Document does not appear to be an official government-issued ID. Please upload a passport, driver's license, or national ID card."
+                elif ai_result.get('confidence') != 'high':
+                    rejection_reason = "Image quality is too low or document text is not clearly visible. Please upload a clear, well-lit photo of your ID."
+                
+                cursor.execute('''
+                    INSERT INTO kyc_verifications (
+                        wallet, status, is_official_document, verification_notes, updated_at
+                    ) VALUES (?, 'rejected', ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(wallet) DO UPDATE SET
+                        status='rejected',
+                        is_official_document=excluded.is_official_document,
+                        verification_notes=excluded.verification_notes,
+                        updated_at=CURRENT_TIMESTAMP
+                ''', (
+                    wallet,
+                    1 if ai_result.get('is_official_document') else 0,
+                    rejection_reason
+                ))
+                
+                logger.warning(f'KYC rejected for wallet {wallet[:10]}...: {rejection_reason}')
+                
+                return jsonify({
+                    'status': 'rejected',
+                    'message': 'Verification failed. Please try again with a clear photo of your official ID.',
+                    'reason': rejection_reason
+                }), 200
+    
+    except Exception as e:
+        logger.error(f'KYC upload error: {str(e)}', exc_info=True)
+        return standard_error_response('KYC verification failed due to server error', 500)
+
+@api_bp.route('/kyc/status', methods=['GET'])
+def get_kyc_status():
+    """Get KYC verification status for a wallet"""
+    try:
+        wallet = request.args.get('wallet', '').strip()
+        
+        if not validate_wallet_address(wallet):
+            return standard_error_response('Invalid wallet address', 400)
+        
+        # Normalize wallet address to lowercase for consistent lookup
+        wallet = wallet.lower()
+        
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            # Use LOWER() for case-insensitive lookup
+            cursor.execute('''
+                SELECT status, full_name, date_of_birth, document_number,
+                       nationality, document_type, verification_notes,
+                       verified_at, created_at, updated_at
+                FROM kyc_verifications
+                WHERE LOWER(wallet)=?
+            ''', (wallet,))
+            
+            row = cursor.fetchone()
+            
+            if not row:
+                return jsonify({
+                    'status': 'not_submitted',
+                    'message': 'No KYC submission found'
+                }), 200
+            
+            kyc_data = dict(_row_to_dict(row))
+            
+            return jsonify({
+                'status': kyc_data['status'],
+                'data': kyc_data
+            }), 200
+        finally:
+            pass
+    
+    except Exception as e:
+        logger.error(f'KYC status error: {str(e)}')
+        return standard_error_response(f'Failed to get KYC status: {str(e)}', 500)
+
 __all__ = ['api_bp']
 

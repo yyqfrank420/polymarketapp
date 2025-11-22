@@ -42,6 +42,11 @@ class Config:
     CHATBOT_RATE_LIMIT = "30 per minute"  # 30 requests/min per IP
     CHATBOT_MAX_MESSAGE_LENGTH = 1000  # Maximum characters in a message
     
+    # KYC Configuration
+    KYC_REWARD_AMOUNT = 20.0  # USDC reward for verification
+    KYC_MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB max image size
+    KYC_RATE_LIMIT = "5 per hour"  # Per wallet address
+    
     @classmethod
     def validate(cls):
         """Validate required configuration"""

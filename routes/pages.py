@@ -23,4 +23,8 @@ def resolved_markets_page():
     """Render the resolved markets page"""
     return render_template('resolved_markets.html')
 
+@pages_bp.route('/profile')
+def profile_page():
+    """Render the user profile and KYC verification page"""
+    return render_template('profile.html')
 
