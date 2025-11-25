@@ -1,7 +1,7 @@
 /* AI Chatbot Styles */
 #chatbot-container {
     position: fixed;
-    bottom: 20px;
+    bottom: 90px; /* Above footer (footer is ~60px tall) */
     right: 20px;
     z-index: 10000; /* Above footer (z-index: 8000) */
     font-family: 'Inter', sans-serif;
@@ -365,7 +365,7 @@
     }
     
     #chatbot-container {
-        bottom: 10px;
+        bottom: 100px; /* Above footer on mobile */
         right: 10px;
     }
 }
