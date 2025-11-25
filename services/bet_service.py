@@ -4,6 +4,8 @@ import threading
 import uuid
 import time
 import logging
+import traceback
+import os
 from collections import OrderedDict
 from utils.database import get_db, db_transaction
 from services.user_service import get_user_balance, update_user_balance
@@ -35,6 +37,22 @@ def cleanup_old_results():
 def bet_worker():
     """Background worker that processes bets sequentially"""
     logger.info("Bet worker thread started")
+    logger.info(f"Thread ID: {threading.get_ident()}")
+    logger.info(f"Database path: {Config.DATABASE_PATH}")
+    logger.info(f"Database exists: {os.path.exists(Config.DATABASE_PATH)}")
+    logger.info(f"Database readable: {os.access(Config.DATABASE_PATH, os.R_OK) if os.path.exists(Config.DATABASE_PATH) else 'N/A'}")
+    logger.info(f"Database writable: {os.access(Config.DATABASE_PATH, os.W_OK) if os.path.exists(Config.DATABASE_PATH) else 'N/A'}")
+    
+    # Test database connection immediately
+    try:
+        test_conn = get_db()
+        test_cursor = test_conn.cursor()
+        test_cursor.execute('SELECT 1 as test')
+        test_result = test_cursor.fetchone()
+        logger.info(f"Initial database connection test: SUCCESS (result: {test_result})")
+    except Exception as db_init_error:
+        logger.error(f"Initial database connection test: FAILED - {db_init_error}", exc_info=True)
+    
     loop_count = 0
     while True:
         loop_count += 1
@@ -43,10 +61,15 @@ def bet_worker():
         try:
             # Use timeout to allow periodic health checks
             try:
+                logger.debug(f"Waiting for bet request from queue (size: {bet_queue.qsize()})...")
                 bet_request = bet_queue.get(timeout=1.0)
                 logger.info(f"Got bet request from queue: {bet_request.get('request_id')}")
             except queue.Empty:
                 # Timeout - check if we should continue
+                continue
+            except Exception as queue_error:
+                logger.error(f"Queue.get() error: {queue_error}", exc_info=True)
+                time.sleep(1)
                 continue
             
             if bet_request is None:  # Shutdown signal
@@ -64,22 +87,39 @@ def bet_worker():
             
             try:
                 logger.info(f"Starting transaction for bet {request_id}")
+                logger.info(f"Bet details: market_id={market_id}, wallet={wallet}, side={side}, amount={amount}")
+                
                 # Test database connection first
                 try:
+                    logger.info("Testing database connection...")
                     test_conn = get_db()
-                    test_conn.execute('SELECT 1')
-                    logger.info("Database connection test successful")
+                    test_cursor = test_conn.cursor()
+                    test_cursor.execute('SELECT 1 as test')
+                    test_result = test_cursor.fetchone()
+                    logger.info(f"Database connection test successful: {test_result}")
                 except Exception as db_test_error:
                     logger.error(f"Database connection test failed: {db_test_error}", exc_info=True)
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     raise
                 
+                logger.info("Starting database transaction...")
+                transaction_start_time = time.time()
                 with db_transaction() as conn:
+                    logger.info(f"Transaction started (took {time.time() - transaction_start_time:.3f}s)")
                     cursor = conn.cursor()
                     
                     # Check market status
                     logger.info(f"Checking market {market_id} status")
-                    cursor.execute('SELECT status FROM markets WHERE id=?', (market_id,))
-                    row = cursor.fetchone()
+                    market_check_start = time.time()
+                    try:
+                        cursor.execute('SELECT status FROM markets WHERE id=?', (market_id,))
+                        row = cursor.fetchone()
+                        logger.info(f"Market query completed in {time.time() - market_check_start:.3f}s, result: {row}")
+                    except Exception as market_query_error:
+                        logger.error(f"Market query failed: {market_query_error}", exc_info=True)
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        raise
+                    
                     if not row:
                         with bet_results_lock:
                             bet_results[request_id] = {
@@ -102,8 +142,16 @@ def bet_worker():
                     
                     # Check user balance
                     logger.info(f"Checking balance for wallet {wallet}")
-                    user_balance = get_user_balance(wallet)
-                    logger.info(f"User balance: {user_balance}, required: {amount}")
+                    balance_check_start = time.time()
+                    try:
+                        user_balance = get_user_balance(wallet)
+                        logger.info(f"Balance check completed in {time.time() - balance_check_start:.3f}s")
+                        logger.info(f"User balance: {user_balance}, required: {amount}")
+                    except Exception as balance_error:
+                        logger.error(f"Balance check failed: {balance_error}", exc_info=True)
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        raise
+                    
                     if user_balance < amount:
                         with bet_results_lock:
                             bet_results[request_id] = {
@@ -116,8 +164,15 @@ def bet_worker():
                     
                     # Calculate shares using LMSR
                     logger.info(f"Calculating shares for {side} side, amount {amount}")
-                    shares, price_per_share = calculate_shares_lmsr(amount, side, market_id)
-                    logger.info(f"Calculated: {shares} shares @ {price_per_share}")
+                    lmsr_start = time.time()
+                    try:
+                        shares, price_per_share = calculate_shares_lmsr(amount, side, market_id)
+                        logger.info(f"LMSR calculation completed in {time.time() - lmsr_start:.3f}s")
+                        logger.info(f"Calculated: {shares} shares @ {price_per_share}")
+                    except Exception as lmsr_error:
+                        logger.error(f"LMSR calculation failed: {lmsr_error}", exc_info=True)
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        raise
                     
                     if shares <= 0:
                         with bet_results_lock:
@@ -131,34 +186,58 @@ def bet_worker():
                     
                     # Insert bet
                     logger.info(f"Inserting bet into database")
-                    cursor.execute('''
-                        INSERT INTO bets (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature))
-                    
-                    bet_id = cursor.lastrowid
-                    logger.info(f"Bet inserted with ID: {bet_id}")
+                    insert_start = time.time()
+                    try:
+                        cursor.execute('''
+                            INSERT INTO bets (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature))
+                        
+                        bet_id = cursor.lastrowid
+                        logger.info(f"Bet insert completed in {time.time() - insert_start:.3f}s, bet_id: {bet_id}")
+                    except Exception as insert_error:
+                        logger.error(f"Bet insert failed: {insert_error}", exc_info=True)
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        raise
                     
                     # Deduct balance
                     logger.info(f"Deducting {amount} from balance")
-                    new_balance = update_user_balance(wallet, amount, 'deduct')
-                    logger.info(f"New balance: {new_balance}")
+                    deduct_start = time.time()
+                    try:
+                        new_balance = update_user_balance(wallet, amount, 'deduct')
+                        logger.info(f"Balance deduction completed in {time.time() - deduct_start:.3f}s")
+                        logger.info(f"New balance: {new_balance}")
+                    except Exception as deduct_error:
+                        logger.error(f"Balance deduction failed: {deduct_error}", exc_info=True)
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        raise
                     
-                    logger.info(f'Bet placed: market {market_id}, {side} €{amount:.2f} ({shares:.2f} shares @ €{price_per_share:.4f}) by {wallet}. New balance: €{new_balance:.2f}')
+                    total_time = time.time() - transaction_start_time
+                    logger.info(f'Bet placed successfully in {total_time:.3f}s: market {market_id}, {side} €{amount:.2f} ({shares:.2f} shares @ €{price_per_share:.4f}) by {wallet}. New balance: €{new_balance:.2f}')
                     
-                    with bet_results_lock:
-                        bet_results[request_id] = {
-                            'success': True,
-                            'bet_id': bet_id,
-                            'shares': shares,
-                            'price_per_share': price_per_share,
-                            'amount': amount,
-                            'side': side,
-                            'market_id': market_id,
-                            'timestamp': time.time()
-                        }
+                    # Store result
+                    logger.info(f"Storing bet result for request_id: {request_id}")
+                    result_store_start = time.time()
+                    try:
+                        with bet_results_lock:
+                            bet_results[request_id] = {
+                                'success': True,
+                                'bet_id': bet_id,
+                                'shares': shares,
+                                'price_per_share': price_per_share,
+                                'amount': amount,
+                                'side': side,
+                                'market_id': market_id,
+                                'timestamp': time.time()
+                            }
+                        logger.info(f"Result stored in {time.time() - result_store_start:.3f}s")
+                    except Exception as result_error:
+                        logger.error(f"Failed to store result: {result_error}", exc_info=True)
+                        raise
                     
+                    logger.info("Cleaning up old results...")
                     cleanup_old_results()
+                    logger.info(f"Bet {request_id} processing COMPLETE")
             
             except Exception as e:
                 logger.error(f'Bet processing error: {str(e)}', exc_info=True)
