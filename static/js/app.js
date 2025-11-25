@@ -804,6 +804,13 @@ async function loadMarketDetail() {
         
         currentPrices = priceData;
         console.log('Market data loaded, rendering...', marketData.market);
+        console.log('Price data:', priceData);
+        console.log('Market prices from market data:', {
+            yes_price: marketData.market.yes_price,
+            no_price: marketData.market.no_price,
+            yes_price_cents: marketData.market.yes_price_cents,
+            no_price_cents: marketData.market.no_price_cents
+        });
         renderMarketDetail(marketData.market, priceData, blockchainData);
         console.log('Market detail rendered successfully');
         } catch (e) {
@@ -847,8 +854,26 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
     const total = yesTotal + noTotal;
     
     // Use prices from API if available, otherwise fall back to market data
-    const yesCents = prices.yes_price_cents !== undefined ? prices.yes_price_cents : (market.yes_price_cents !== undefined ? market.yes_price_cents : (market.yes_price ? market.yes_price * 100 : 50));
-    const noCents = prices.no_price_cents !== undefined ? prices.no_price_cents : (market.no_price_cents !== undefined ? market.no_price_cents : (market.no_price ? market.no_price * 100 : 50));
+    // Priority: prices API > market.yes_price_cents > market.yes_price * 100
+    let yesCents, noCents;
+    if (prices && (prices.yes_price_cents !== undefined || prices.yes_price !== undefined)) {
+        yesCents = prices.yes_price_cents !== undefined ? prices.yes_price_cents : (prices.yes_price * 100);
+        noCents = prices.no_price_cents !== undefined ? prices.no_price_cents : (prices.no_price * 100);
+    } else if (market.yes_price_cents !== undefined || market.yes_price !== undefined) {
+        yesCents = market.yes_price_cents !== undefined ? market.yes_price_cents : (market.yes_price * 100);
+        noCents = market.no_price_cents !== undefined ? market.no_price_cents : (market.no_price * 100);
+    } else {
+        // Last resort: calculate from totals or use 50/50
+        if (total > 0) {
+            yesCents = (yesTotal / total) * 100;
+            noCents = (noTotal / total) * 100;
+        } else {
+            yesCents = 50;
+            noCents = 50;
+        }
+    }
+    
+    console.log('Rendering with prices:', { yesCents, noCents, prices, marketPrices: { yes: market.yes_price, no: market.no_price } });
     
     // Calculate price changes
     const prevYesCents = (previousPrices.yes_price || 0.5) * 100;
