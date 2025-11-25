@@ -739,22 +739,48 @@ async function loadMarketDetail() {
             if (priceRes.ok) {
                 priceData = await priceRes.json();
             } else {
-                // For resolved markets, use prices from market data
+                // For resolved markets or if price API fails, use prices from market data
                 priceData = {
-                    yes_price: marketData.market.yes_price || 0.5,
-                    no_price: marketData.market.no_price || 0.5,
-                    yes_price_cents: marketData.market.yes_price_cents || 50,
-                    no_price_cents: marketData.market.no_price_cents || 50
+                    yes_price: marketData.market.yes_price,
+                    no_price: marketData.market.no_price,
+                    yes_price_cents: marketData.market.yes_price_cents,
+                    no_price_cents: marketData.market.no_price_cents
                 };
+                // Ensure we have valid prices
+                if (!priceData.yes_price || !priceData.no_price) {
+                    priceData.yes_price = marketData.market.yes_price || 0.5;
+                    priceData.no_price = marketData.market.no_price || 0.5;
+                    priceData.yes_price_cents = priceData.yes_price * 100;
+                    priceData.no_price_cents = priceData.no_price * 100;
+                }
             }
         } catch (e) {
             console.warn('Price API failed, using market data prices:', e);
+            // Use market data prices directly (they should be up-to-date)
             priceData = {
-                yes_price: marketData.market.yes_price || 0.5,
-                no_price: marketData.market.no_price || 0.5,
-                yes_price_cents: marketData.market.yes_price_cents || 50,
-                no_price_cents: marketData.market.no_price_cents || 50
+                yes_price: marketData.market.yes_price,
+                no_price: marketData.market.no_price,
+                yes_price_cents: marketData.market.yes_price_cents,
+                no_price_cents: marketData.market.no_price_cents
             };
+            // If market data doesn't have prices, calculate from totals
+            if (!priceData.yes_price && !priceData.no_price) {
+                const yesTotal = marketData.market.yes_total || 0;
+                const noTotal = marketData.market.no_total || 0;
+                const total = yesTotal + noTotal;
+                if (total > 0) {
+                    priceData.yes_price = yesTotal / total;
+                    priceData.no_price = noTotal / total;
+                    priceData.yes_price_cents = priceData.yes_price * 100;
+                    priceData.no_price_cents = priceData.no_price * 100;
+                } else {
+                    // Last resort: use LMSR prices from market data
+                    priceData.yes_price = marketData.market.yes_price || 0.5;
+                    priceData.no_price = marketData.market.no_price || 0.5;
+                    priceData.yes_price_cents = priceData.yes_price * 100;
+                    priceData.no_price_cents = priceData.no_price * 100;
+                }
+            }
         }
         
         // Handle blockchain status
@@ -820,8 +846,9 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
     const noTotal = market.no_total || 0;
     const total = yesTotal + noTotal;
     
-    const yesCents = prices.yes_price_cents || 50;
-    const noCents = prices.no_price_cents || 50;
+    // Use prices from API if available, otherwise fall back to market data
+    const yesCents = prices.yes_price_cents !== undefined ? prices.yes_price_cents : (market.yes_price_cents !== undefined ? market.yes_price_cents : (market.yes_price ? market.yes_price * 100 : 50));
+    const noCents = prices.no_price_cents !== undefined ? prices.no_price_cents : (market.no_price_cents !== undefined ? market.no_price_cents : (market.no_price ? market.no_price * 100 : 50));
     
     // Calculate price changes
     const prevYesCents = (previousPrices.yes_price || 0.5) * 100;
