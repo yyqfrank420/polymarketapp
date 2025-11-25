@@ -263,29 +263,29 @@ def place_bet(market_id):
         finally:
             pass
 
-        # Process bet synchronously (PythonAnywhere doesn't support threading)
-        from services.bet_service import process_bet_sync
-        result = process_bet_sync(market_id, wallet, side, amount, tx_hash, signature)
+        # Queue bet for background processing
+        from services.bet_service import queue_bet
+        request_id, queue_position = queue_bet(market_id, wallet, side, amount, tx_hash, signature)
         
-        if result['success']:
-            # Bet processed successfully - return immediately
+        # Return immediately with request_id for polling
+        if queue_position == 0:
+            # First in queue - will be processed immediately
             return jsonify({
                 'success': True,
-                'request_id': result['request_id'],
-                'bet_id': result['bet_id'],
-                'shares': result['shares'],
-                'price_per_share': result['price_per_share'],
-                'status': 'completed',
-                'message': 'Bet placed successfully'
-            }), 200
+                'request_id': request_id,
+                'queue_position': queue_position,
+                'status': 'processing',
+                'message': 'Trade is being processed'
+            }), 202
         else:
-            # Bet failed
+            # Queued behind other bets
             return jsonify({
-                'success': False,
-                'request_id': result.get('request_id'),
-                'message': result.get('message', 'Failed to place bet'),
-                'status': 'failed'
-            }), 400
+                'success': True,
+                'request_id': request_id,
+                'queue_position': queue_position,
+                'status': 'queued',
+                'message': f'Trade queued (position {queue_position})'
+            }), 202
         
     except Exception as e:
         logger.error(f'Place bet error: {str(e)}')
@@ -303,90 +303,6 @@ def check_bet_status(request_id):
             'status': 'processing',
             'message': 'Bet is still being processed...'
         }), 202
-
-@api_bp.route('/debug/queue', methods=['GET'])
-def debug_queue():
-    """Debug endpoint to check bet queue and worker status"""
-    try:
-        from services.bet_service import bet_queue, bet_results, bet_results_lock, bet_worker_thread, ensure_worker_running
-        import os
-        from config import Config
-        
-        # Ensure worker is running
-        ensure_worker_running()
-        
-        # Get queue info
-        queue_size = bet_queue.qsize()
-        worker_alive = bet_worker_thread.is_alive() if bet_worker_thread else False
-        
-        # Get recent results (last 5)
-        with bet_results_lock:
-            recent_results = list(bet_results.items())[-5:]
-            results_info = [
-                {
-                    'request_id': rid,
-                    'success': r.get('success'),
-                    'message': r.get('message'),
-                    'timestamp': r.get('timestamp'),
-                    'age_seconds': time.time() - r.get('timestamp', 0) if r.get('timestamp') else None
-                }
-                for rid, r in recent_results
-            ]
-        
-        # Database diagnostics
-        db_path = Config.DATABASE_PATH
-        db_exists = os.path.exists(db_path)
-        db_readable = os.access(db_path, os.R_OK) if db_exists else False
-        db_writable = os.access(db_path, os.W_OK) if db_exists else False
-        
-        # Test database connection
-        db_test_result = None
-        try:
-            from utils.database import get_db
-            test_conn = get_db()
-            test_cursor = test_conn.cursor()
-            test_cursor.execute('SELECT 1 as test')
-            db_test_result = test_cursor.fetchone()
-            db_test_result = 'SUCCESS' if db_test_result else 'FAILED'
-        except Exception as db_error:
-            db_test_result = f'ERROR: {str(db_error)}'
-        
-        # Get worker heartbeat
-        from services.bet_service import worker_heartbeat, worker_heartbeat_lock
-        import time as time_module
-        with worker_heartbeat_lock:
-            heartbeat = worker_heartbeat.copy()
-        
-        heartbeat_age = time_module.time() - heartbeat.get('last_loop_time', 0) if heartbeat.get('last_loop_time') else None
-        worker_active = heartbeat_age is not None and heartbeat_age < 5.0  # Active if looped in last 5 seconds
-        
-        return jsonify({
-            'queue_size': queue_size,
-            'worker_alive': worker_alive,
-            'worker_active': worker_active,
-            'worker_heartbeat': {
-                'last_loop_time': heartbeat.get('last_loop_time'),
-                'loop_count': heartbeat.get('loop_count', 0),
-                'age_seconds': heartbeat_age
-            },
-            'worker_thread': str(bet_worker_thread) if bet_worker_thread else None,
-            'recent_results_count': len(results_info),
-            'recent_results': results_info,
-            'status': 'healthy' if (worker_alive and worker_active) else ('worker_stuck' if worker_alive else 'worker_dead'),
-            'database': {
-                'path': db_path,
-                'exists': db_exists,
-                'readable': db_readable,
-                'writable': db_writable,
-                'connection_test': db_test_result
-            }
-        }), 200
-    except Exception as e:
-        logger.error(f'Debug queue error: {str(e)}', exc_info=True)
-        return jsonify({
-            'error': str(e),
-            'status': 'error'
-        }), 500
 
 @api_bp.route('/bets/<int:bet_id>/undo', methods=['POST'])
 def undo_bet(bet_id):

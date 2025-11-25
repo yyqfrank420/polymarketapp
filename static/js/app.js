@@ -803,18 +803,9 @@ async function loadMarketDetail() {
         }
         
         currentPrices = priceData;
-        console.log('Market data loaded, rendering...', marketData.market);
-        console.log('Price data from API:', priceData);
-        console.log('Market prices from market data:', {
-            yes_price: marketData.market.yes_price,
-            no_price: marketData.market.no_price,
-            yes_price_cents: marketData.market.yes_price_cents,
-            no_price_cents: marketData.market.no_price_cents
-        });
         
         // Ensure priceData has the correct structure
         if (!priceData || Object.keys(priceData).length === 0) {
-            console.warn('Price data is empty, using market data prices');
             priceData = {
                 yes_price: marketData.market.yes_price,
                 no_price: marketData.market.no_price,
@@ -824,7 +815,6 @@ async function loadMarketDetail() {
         }
         
         renderMarketDetail(marketData.market, priceData, blockchainData);
-        console.log('Market detail rendered successfully');
         } catch (e) {
         console.error('Failed to load market detail', e);
         console.error('Error stack:', e.stack);
@@ -836,8 +826,6 @@ async function loadMarketDetail() {
 }
 
 function renderMarketDetail(market, prices, blockchainData = {}) {
-    console.log('renderMarketDetail called with:', { market: market?.id, prices, blockchainData });
-    
     const infoContainer = document.getElementById('marketDetailInfo');
     const oddsContainer = document.getElementById('oddsDisplay');
     
@@ -873,20 +861,15 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
         // Use price API data (LMSR calculated)
         yesCents = prices.yes_price_cents !== undefined ? prices.yes_price_cents : (prices.yes_price * 100);
         noCents = prices.no_price_cents !== undefined ? prices.no_price_cents : (prices.no_price * 100);
-        console.log('Using price API data (LMSR)');
     } else if (market.yes_price_cents !== undefined || market.yes_price !== undefined) {
         // Use market data prices (also LMSR calculated)
         yesCents = market.yes_price_cents !== undefined ? market.yes_price_cents : (market.yes_price * 100);
         noCents = market.no_price_cents !== undefined ? market.no_price_cents : (market.no_price * 100);
-        console.log('Using market data prices (LMSR)');
     } else {
         // Last resort: 50/50 (should never happen if market is initialized correctly)
-        console.warn('No LMSR prices available, using 50/50 fallback');
         yesCents = 50;
         noCents = 50;
     }
-    
-    console.log('Rendering with LMSR prices:', { yesCents, noCents, prices, marketPrices: { yes: market.yes_price, no: market.no_price } });
     
     // Calculate price changes
     const prevYesCents = (previousPrices.yes_price || 0.5) * 100;
