@@ -201,11 +201,10 @@
             };
             
             container.innerHTML = markets.map(m => {
-                const yesTotal = m.yes_total || 0;
-                const noTotal = m.no_total || 0;
-                const total = yesTotal + noTotal;
-                const yesPercent = total > 0 ? ((yesTotal / total) * 100).toFixed(0) : 50;
-                const noPercent = total > 0 ? ((noTotal / total) * 100).toFixed(0) : 50;
+                // Use LMSR prices from API (not calculated from totals!)
+                const yesPercent = (m.yes_price_cents !== undefined ? m.yes_price_cents : (m.yes_price ? m.yes_price * 100 : 50)).toFixed(0);
+                const noPercent = (m.no_price_cents !== undefined ? m.no_price_cents : (m.no_price ? m.no_price * 100 : 50)).toFixed(0);
+                const total = (m.yes_total || 0) + (m.no_total || 0);  // For volume display only
                 
                 const resolution = m.resolution || 'Unknown';
                 const resolutionClass = resolution === 'YES' ? 'resolved-yes' : 'resolved-no';

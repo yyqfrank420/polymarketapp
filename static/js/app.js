@@ -829,14 +829,8 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
     }
     
     try {
-    
-    const yesTotal = market.yes_total || 0;
-    const noTotal = market.no_total || 0;
-    const total = yesTotal + noTotal;
-    
     // ALWAYS use LMSR prices from API or market data - NEVER calculate from totals
-    // Totals (yes_total/no_total) are just volume, not prices!
-    // Priority: prices API > market.yes_price_cents > market.yes_price * 100
+    // yes_total/no_total are bet VOLUME, not prices!
     let yesCents, noCents;
     if (prices && (prices.yes_price_cents !== undefined || prices.yes_price !== undefined)) {
         // Use price API data (LMSR calculated)
