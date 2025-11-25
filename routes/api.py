@@ -373,10 +373,14 @@ def create_market_blockchain():
             market_id = cursor.lastrowid
             cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, 0.0, 0.0)', (market_id,))
         
-        # Try blockchain transaction (currently placeholder)
+        # Try blockchain transaction (this endpoint is called when blockchain deployment is requested)
+        blockchain_tx_hash = None
+        blockchain_error = None
+        
         success, tx_hash, error = blockchain_service.create_market_on_chain(question, description, end_date_timestamp)
         
         if success and tx_hash:
+            blockchain_tx_hash = tx_hash
             with db_transaction() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
@@ -384,16 +388,19 @@ def create_market_blockchain():
                     SET blockchain_tx_hash=?, contract_address=?
                     WHERE id=?
                 ''', (tx_hash, Config.CONTRACT_ADDRESS, market_id))
-        
-        logger.info(f'Market {market_id} created with blockchain integration')
+            logger.info(f'Market {market_id} created on blockchain: {tx_hash}')
+        else:
+            blockchain_error = error or "Blockchain deployment failed"
+            logger.warning(f'Market {market_id} created but blockchain deployment failed: {blockchain_error}')
         
         return jsonify({
             'success': True,
             'market_id': market_id,
-            'blockchain_tx_hash': tx_hash,
-            'contract_address': Config.CONTRACT_ADDRESS,
-            'etherscan_url': f'https://sepolia.etherscan.io/tx/{tx_hash}' if tx_hash and tx_hash.startswith('0x') else None,
-            'blockchain_note': error if not success else None
+            'blockchain_tx_hash': blockchain_tx_hash,
+            'contract_address': Config.CONTRACT_ADDRESS if blockchain_tx_hash else None,
+            'etherscan_url': f'https://sepolia.etherscan.io/tx/{blockchain_tx_hash}' if blockchain_tx_hash and blockchain_tx_hash.startswith('0x') else None,
+            'blockchain_note': blockchain_error,
+            'message': 'Market created successfully' + (f' (Blockchain: {blockchain_error})' if blockchain_error else (' (Blockchain deployed)' if blockchain_tx_hash else ''))
         }), 201
         
     except Exception as e:

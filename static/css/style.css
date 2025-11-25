@@ -1945,6 +1945,11 @@ body.dark-mode {
     color: var(--text-primary);
     padding: 0.75rem 1rem;
     border-radius: 8px;
+    pointer-events: auto !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
 }
 
 .create-market-card .form-control:focus,
@@ -1953,15 +1958,28 @@ body.dark-mode {
     border-color: var(--blue-primary);
     color: var(--text-primary);
     box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    outline: none;
 }
 
 .create-market-card .form-control::placeholder {
     color: var(--text-muted);
+    opacity: 0.6;
 }
 
 .create-market-card textarea.form-control {
     min-height: 120px;
     resize: vertical;
+    pointer-events: auto !important;
+    user-select: text !important;
+}
+
+.create-market-card input[type="text"],
+.create-market-card input[type="url"],
+.create-market-card input[type="date"],
+.create-market-card textarea {
+    pointer-events: auto !important;
+    user-select: text !important;
+    cursor: text !important;
 }
 
 .market-preview {
