@@ -35,11 +35,16 @@ def cleanup_old_results():
 def bet_worker():
     """Background worker that processes bets sequentially"""
     logger.info("Bet worker thread started")
+    loop_count = 0
     while True:
+        loop_count += 1
+        if loop_count % 10 == 0:  # Log every 10 loops
+            logger.info(f"Bet worker loop #{loop_count}, queue size: {bet_queue.qsize()}")
         try:
             # Use timeout to allow periodic health checks
             try:
                 bet_request = bet_queue.get(timeout=1.0)
+                logger.info(f"Got bet request from queue: {bet_request.get('request_id')}")
             except queue.Empty:
                 # Timeout - check if we should continue
                 continue
@@ -59,6 +64,15 @@ def bet_worker():
             
             try:
                 logger.info(f"Starting transaction for bet {request_id}")
+                # Test database connection first
+                try:
+                    test_conn = get_db()
+                    test_conn.execute('SELECT 1')
+                    logger.info("Database connection test successful")
+                except Exception as db_test_error:
+                    logger.error(f"Database connection test failed: {db_test_error}", exc_info=True)
+                    raise
+                
                 with db_transaction() as conn:
                     cursor = conn.cursor()
                     
