@@ -2,6 +2,7 @@
 from flask import Blueprint, request, jsonify, Response
 import logging
 import json
+import time
 from datetime import datetime
 from utils.database import get_db, db_transaction, _row_to_dict
 from utils.validators import (
@@ -304,6 +305,48 @@ def check_bet_status(request_id):
             'status': 'processing',
             'message': 'Bet is still being processed...'
         }), 202
+
+@api_bp.route('/debug/queue', methods=['GET'])
+def debug_queue():
+    """Debug endpoint to check bet queue and worker status"""
+    try:
+        from services.bet_service import bet_queue, bet_results, bet_results_lock, bet_worker_thread, ensure_worker_running
+        
+        # Ensure worker is running
+        ensure_worker_running()
+        
+        # Get queue info
+        queue_size = bet_queue.qsize()
+        worker_alive = bet_worker_thread.is_alive() if bet_worker_thread else False
+        
+        # Get recent results (last 5)
+        with bet_results_lock:
+            recent_results = list(bet_results.items())[-5:]
+            results_info = [
+                {
+                    'request_id': rid,
+                    'success': r.get('success'),
+                    'message': r.get('message'),
+                    'timestamp': r.get('timestamp'),
+                    'age_seconds': time.time() - r.get('timestamp', 0) if r.get('timestamp') else None
+                }
+                for rid, r in recent_results
+            ]
+        
+        return jsonify({
+            'queue_size': queue_size,
+            'worker_alive': worker_alive,
+            'worker_thread': str(bet_worker_thread) if bet_worker_thread else None,
+            'recent_results_count': len(results_info),
+            'recent_results': results_info,
+            'status': 'healthy' if worker_alive else 'worker_dead'
+        }), 200
+    except Exception as e:
+        logger.error(f'Debug queue error: {str(e)}', exc_info=True)
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
 
 @api_bp.route('/bets/<int:bet_id>/undo', methods=['POST'])
 def undo_bet(bet_id):
