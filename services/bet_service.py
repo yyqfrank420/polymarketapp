@@ -34,11 +34,20 @@ def cleanup_old_results():
 
 def bet_worker():
     """Background worker that processes bets sequentially"""
+    logger.info("Bet worker thread started")
     while True:
         try:
-            bet_request = bet_queue.get()
+            # Use timeout to allow periodic health checks
+            try:
+                bet_request = bet_queue.get(timeout=1.0)
+            except queue.Empty:
+                # Timeout - check if we should continue
+                continue
+            
             if bet_request is None:  # Shutdown signal
                 break
+            
+            logger.info(f"Processing bet request: {bet_request.get('request_id')}")
             
             request_id = bet_request['request_id']
             market_id = bet_request['market_id']
@@ -49,10 +58,12 @@ def bet_worker():
             signature = bet_request.get('signature')
             
             try:
+                logger.info(f"Starting transaction for bet {request_id}")
                 with db_transaction() as conn:
                     cursor = conn.cursor()
                     
                     # Check market status
+                    logger.info(f"Checking market {market_id} status")
                     cursor.execute('SELECT status FROM markets WHERE id=?', (market_id,))
                     row = cursor.fetchone()
                     if not row:
@@ -76,7 +87,9 @@ def bet_worker():
                         continue
                     
                     # Check user balance
+                    logger.info(f"Checking balance for wallet {wallet}")
                     user_balance = get_user_balance(wallet)
+                    logger.info(f"User balance: {user_balance}, required: {amount}")
                     if user_balance < amount:
                         with bet_results_lock:
                             bet_results[request_id] = {
@@ -88,7 +101,9 @@ def bet_worker():
                         continue
                     
                     # Calculate shares using LMSR
+                    logger.info(f"Calculating shares for {side} side, amount {amount}")
                     shares, price_per_share = calculate_shares_lmsr(amount, side, market_id)
+                    logger.info(f"Calculated: {shares} shares @ {price_per_share}")
                     
                     if shares <= 0:
                         with bet_results_lock:
@@ -101,15 +116,19 @@ def bet_worker():
                         continue
                     
                     # Insert bet
+                    logger.info(f"Inserting bet into database")
                     cursor.execute('''
                         INSERT INTO bets (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature))
                     
                     bet_id = cursor.lastrowid
+                    logger.info(f"Bet inserted with ID: {bet_id}")
                     
                     # Deduct balance
+                    logger.info(f"Deducting {amount} from balance")
                     new_balance = update_user_balance(wallet, amount, 'deduct')
+                    logger.info(f"New balance: {new_balance}")
                     
                     logger.info(f'Bet placed: market {market_id}, {side} €{amount:.2f} ({shares:.2f} shares @ €{price_per_share:.4f}) by {wallet}. New balance: €{new_balance:.2f}')
                     
