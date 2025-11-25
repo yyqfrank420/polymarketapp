@@ -243,8 +243,13 @@ function initHomePage() {
 async function loadHomeMarkets() {
     try {
         const res = await fetch('/api/markets');
+        if (!res.ok) {
+            throw new Error(`API returned ${res.status}`);
+        }
         const data = await res.json();
         allMarkets = data.markets || [];
+        
+        console.log(`Loaded ${allMarkets.length} markets from API`);
         
         // Update stats
         updateHomeStats(allMarkets);
@@ -252,11 +257,14 @@ async function loadHomeMarkets() {
         // Display markets
         filterMarkets();
         
-        document.getElementById('marketsLoading').style.display = 'none';
+        const loadingEl = document.getElementById('marketsLoading');
+        if (loadingEl) loadingEl.style.display = 'none';
     } catch (e) {
         console.error('Failed to load markets', e);
-        document.getElementById('marketsLoading').style.display = 'none';
-        document.getElementById('marketsEmpty').style.display = 'block';
+        const loadingEl = document.getElementById('marketsLoading');
+        if (loadingEl) loadingEl.style.display = 'none';
+        const emptyEl = document.getElementById('marketsEmpty');
+        if (emptyEl) emptyEl.style.display = 'block';
     }
 }
 
@@ -293,15 +301,22 @@ function filterMarkets() {
 
 function renderHomeMarkets(markets) {
     const container = document.getElementById('marketsList');
-    if (!container) return;
-    
-    if (!markets.length) {
-        container.innerHTML = '';
-        document.getElementById('marketsEmpty').style.display = 'block';
+    if (!container) {
+        console.error('marketsList container not found!');
         return;
     }
     
-    document.getElementById('marketsEmpty').style.display = 'none';
+    console.log(`Rendering ${markets.length} markets`);
+    
+    if (!markets.length) {
+        container.innerHTML = '';
+        const emptyEl = document.getElementById('marketsEmpty');
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+    
+    const emptyEl = document.getElementById('marketsEmpty');
+    if (emptyEl) emptyEl.style.display = 'none';
     
     container.innerHTML = markets.map(m => {
         // Use LMSR prices from API (not calculated from totals!)
