@@ -128,7 +128,9 @@ def bet_worker():
                     cleanup_old_results()
             
             except Exception as e:
-                logger.error(f'Bet processing error: {str(e)}')
+                logger.error(f'Bet processing error: {str(e)}', exc_info=True)
+                import traceback
+                logger.error(f'Traceback: {traceback.format_exc()}')
                 with bet_results_lock:
                     bet_results[request_id] = {
                         'success': False,
@@ -139,11 +141,26 @@ def bet_worker():
             bet_queue.task_done()
         
         except Exception as e:
-            logger.error(f'Bet worker error: {str(e)}')
+            logger.error(f'Bet worker error: {str(e)}', exc_info=True)
+            import traceback
+            logger.error(f'Worker traceback: {traceback.format_exc()}')
+            # Continue processing - don't let worker die
+            time.sleep(1)
 
 # Start worker thread
-bet_worker_thread = threading.Thread(target=bet_worker, daemon=True)
-bet_worker_thread.start()
+bet_worker_thread = None
+
+def ensure_worker_running():
+    """Ensure bet worker thread is running, restart if needed"""
+    global bet_worker_thread
+    if bet_worker_thread is None or not bet_worker_thread.is_alive():
+        logger.warning("Bet worker thread not running, starting...")
+        bet_worker_thread = threading.Thread(target=bet_worker, daemon=True)
+        bet_worker_thread.start()
+        logger.info("Bet worker thread started")
+
+# Start worker on module import
+ensure_worker_running()
 
 def queue_bet(market_id, wallet, side, amount, tx_hash=None, signature=None):
     """Queue a bet for processing. Returns (request_id, queue_position)"""

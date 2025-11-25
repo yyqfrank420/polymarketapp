@@ -262,6 +262,10 @@ def place_bet(market_id):
         finally:
             pass
 
+        # Ensure worker thread is running
+        from services.bet_service import ensure_worker_running
+        ensure_worker_running()
+        
         # Queue bet and get queue position
         request_id, queue_position = queue_bet(market_id, wallet, side, amount, tx_hash, signature)
         
