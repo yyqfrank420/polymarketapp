@@ -282,20 +282,26 @@ function filterMarkets() {
     const searchTerm = document.getElementById('searchMarkets')?.value.toLowerCase() || '';
     
     let filtered = allMarkets;
+    console.log(`Filtering ${allMarkets.length} markets, currentFilter="${currentFilter}", searchTerm="${searchTerm}"`);
     
     // Filter by category
     if (currentFilter !== 'all') {
+        const before = filtered.length;
         filtered = filtered.filter(m => (m.category || '').toLowerCase() === currentFilter);
+        console.log(`After category filter (${currentFilter}): ${before} → ${filtered.length}`);
     }
     
     // Filter by search
     if (searchTerm) {
+        const before = filtered.length;
         filtered = filtered.filter(m => 
             (m.question || '').toLowerCase().includes(searchTerm) ||
             (m.description || '').toLowerCase().includes(searchTerm)
         );
+        console.log(`After search filter: ${before} → ${filtered.length}`);
     }
     
+    console.log(`Calling renderHomeMarkets with ${filtered.length} markets`);
     renderHomeMarkets(filtered);
 }
 
