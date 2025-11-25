@@ -283,21 +283,116 @@ def ensure_worker_running():
 # Start worker on module import
 ensure_worker_running()
 
-def queue_bet(market_id, wallet, side, amount, tx_hash=None, signature=None):
-    """Queue a bet for processing. Returns (request_id, queue_position)"""
+def process_bet_sync(market_id, wallet, side, amount, tx_hash=None, signature=None):
+    """
+    Process a bet synchronously (for PythonAnywhere compatibility - no threading)
+    Returns: dict with 'success', 'bet_id', 'shares', 'price_per_share', etc.
+    """
     request_id = str(uuid.uuid4())
-    # Check queue size BEFORE adding (this is the position in queue)
-    queue_position = bet_queue.qsize()
-    bet_queue.put({
-        'request_id': request_id,
-        'market_id': market_id,
-        'wallet': wallet,
-        'side': side,
-        'amount': amount,
-        'tx_hash': tx_hash,
-        'signature': signature
-    })
-    return request_id, queue_position
+    wallet = wallet.lower() if wallet else wallet
+    
+    try:
+        logger.info(f"Processing bet synchronously: request_id={request_id}, market_id={market_id}, wallet={wallet}, side={side}, amount={amount}")
+        
+        with db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # Check market status
+            cursor.execute('SELECT status FROM markets WHERE id=?', (market_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {
+                    'success': False,
+                    'message': 'Market not found',
+                    'request_id': request_id
+                }
+            
+            if row['status'] != 'open':
+                return {
+                    'success': False,
+                    'message': 'Market is not open',
+                    'request_id': request_id
+                }
+            
+            # Check user balance
+            user_balance = get_user_balance(wallet)
+            if user_balance < amount:
+                return {
+                    'success': False,
+                    'message': f'Insufficient balance. You have €{user_balance:.2f}, need €{amount:.2f}',
+                    'request_id': request_id
+                }
+            
+            # Calculate shares using LMSR
+            shares, price_per_share = calculate_shares_lmsr(amount, side, market_id)
+            
+            if shares <= 0:
+                return {
+                    'success': False,
+                    'message': 'Invalid bet amount or market state',
+                    'request_id': request_id
+                }
+            
+            # Insert bet
+            cursor.execute('''
+                INSERT INTO bets (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature))
+            
+            bet_id = cursor.lastrowid
+            
+            # Deduct balance
+            new_balance = update_user_balance(wallet, amount, 'deduct')
+            
+            logger.info(f'Bet placed: market {market_id}, {side} €{amount:.2f} ({shares:.2f} shares @ €{price_per_share:.4f}) by {wallet}. New balance: €{new_balance:.2f}')
+            
+            # Store result for status checking
+            with bet_results_lock:
+                bet_results[request_id] = {
+                    'success': True,
+                    'bet_id': bet_id,
+                    'shares': shares,
+                    'price_per_share': price_per_share,
+                    'amount': amount,
+                    'side': side,
+                    'market_id': market_id,
+                    'timestamp': time.time()
+                }
+            
+            return {
+                'success': True,
+                'request_id': request_id,
+                'bet_id': bet_id,
+                'shares': shares,
+                'price_per_share': price_per_share,
+                'amount': amount,
+                'side': side,
+                'market_id': market_id
+            }
+    
+    except Exception as e:
+        logger.error(f'Bet processing error: {str(e)}', exc_info=True)
+        with bet_results_lock:
+            bet_results[request_id] = {
+                'success': False,
+                'message': f'Failed to place bet: {str(e)}',
+                'timestamp': time.time()
+            }
+        return {
+            'success': False,
+            'message': f'Failed to place bet: {str(e)}',
+            'request_id': request_id
+        }
+
+def queue_bet(market_id, wallet, side, amount, tx_hash=None, signature=None):
+    """
+    Queue a bet for processing (DEPRECATED on PythonAnywhere - use process_bet_sync instead)
+    On PythonAnywhere, threading doesn't work, so this just processes synchronously
+    """
+    # PythonAnywhere doesn't support threading - process immediately
+    result = process_bet_sync(market_id, wallet, side, amount, tx_hash, signature)
+    # Return format compatible with old queue system
+    return result['request_id'], 0  # queue_position is always 0 for sync processing
 
 def get_bet_result(request_id):
     """Get bet result by request_id"""

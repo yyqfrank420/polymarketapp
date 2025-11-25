@@ -263,31 +263,29 @@ def place_bet(market_id):
         finally:
             pass
 
-        # Ensure worker thread is running
-        from services.bet_service import ensure_worker_running
-        ensure_worker_running()
+        # Process bet synchronously (PythonAnywhere doesn't support threading)
+        from services.bet_service import process_bet_sync
+        result = process_bet_sync(market_id, wallet, side, amount, tx_hash, signature)
         
-        # Queue bet and get queue position
-        request_id, queue_position = queue_bet(market_id, wallet, side, amount, tx_hash, signature)
-        
-        # If queue was empty (position 0), bet will process immediately - no warning needed
-        if queue_position == 0:
+        if result['success']:
+            # Bet processed successfully - return immediately
             return jsonify({
                 'success': True,
-                'status': 'processing',
-                'request_id': request_id,
-                'queue_position': 0,
-                'message': 'Your bet is being processed...'
-            }), 202
+                'request_id': result['request_id'],
+                'bet_id': result['bet_id'],
+                'shares': result['shares'],
+                'price_per_share': result['price_per_share'],
+                'status': 'completed',
+                'message': 'Bet placed successfully'
+            }), 200
         else:
-            # There are bets ahead - show warning
+            # Bet failed
             return jsonify({
-                'success': True,
-                'status': 'queued',
-                'request_id': request_id,
-                'queue_position': queue_position,
-                'message': 'Your bet is being processed...'
-            }), 202
+                'success': False,
+                'request_id': result.get('request_id'),
+                'message': result.get('message', 'Failed to place bet'),
+                'status': 'failed'
+            }), 400
         
     except Exception as e:
         logger.error(f'Place bet error: {str(e)}')
