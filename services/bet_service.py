@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 bet_queue = queue.Queue()
 bet_results_lock = threading.Lock()
 bet_results = OrderedDict()
+worker_heartbeat = {'last_loop_time': None, 'loop_count': 0}  # Track worker activity
+worker_heartbeat_lock = threading.Lock()
 
 def cleanup_old_results():
     """Clean up old bet results"""
@@ -56,6 +58,13 @@ def bet_worker():
     loop_count = 0
     while True:
         loop_count += 1
+        current_time = time.time()
+        
+        # Update heartbeat
+        with worker_heartbeat_lock:
+            worker_heartbeat['last_loop_time'] = current_time
+            worker_heartbeat['loop_count'] = loop_count
+        
         if loop_count % 10 == 0:  # Log every 10 loops
             logger.info(f"Bet worker loop #{loop_count}, queue size: {bet_queue.qsize()}")
         try:

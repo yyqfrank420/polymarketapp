@@ -353,13 +353,28 @@ def debug_queue():
         except Exception as db_error:
             db_test_result = f'ERROR: {str(db_error)}'
         
+        # Get worker heartbeat
+        from services.bet_service import worker_heartbeat, worker_heartbeat_lock
+        import time as time_module
+        with worker_heartbeat_lock:
+            heartbeat = worker_heartbeat.copy()
+        
+        heartbeat_age = time_module.time() - heartbeat.get('last_loop_time', 0) if heartbeat.get('last_loop_time') else None
+        worker_active = heartbeat_age is not None and heartbeat_age < 5.0  # Active if looped in last 5 seconds
+        
         return jsonify({
             'queue_size': queue_size,
             'worker_alive': worker_alive,
+            'worker_active': worker_active,
+            'worker_heartbeat': {
+                'last_loop_time': heartbeat.get('last_loop_time'),
+                'loop_count': heartbeat.get('loop_count', 0),
+                'age_seconds': heartbeat_age
+            },
             'worker_thread': str(bet_worker_thread) if bet_worker_thread else None,
             'recent_results_count': len(results_info),
             'recent_results': results_info,
-            'status': 'healthy' if worker_alive else 'worker_dead',
+            'status': 'healthy' if (worker_alive and worker_active) else ('worker_stuck' if worker_alive else 'worker_dead'),
             'database': {
                 'path': db_path,
                 'exists': db_exists,
