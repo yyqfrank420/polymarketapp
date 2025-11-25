@@ -16,6 +16,7 @@ def get_db():
         _local.conn.execute('PRAGMA journal_mode=WAL')
         _local.conn.execute('PRAGMA busy_timeout=30000')  # 30 second busy timeout
         _local.conn.execute('PRAGMA synchronous=NORMAL')  # Faster writes, still safe
+        _local.conn.execute('PRAGMA foreign_keys=ON')  # Enforce FK relationships
     return _local.conn
 
 @contextmanager
@@ -46,6 +47,7 @@ def init_db():
     # Enable WAL mode for better concurrent access
     cursor.execute('PRAGMA journal_mode=WAL')
     cursor.execute('PRAGMA busy_timeout=30000')
+    cursor.execute('PRAGMA foreign_keys=ON')
     
     try:
         # Registrations table

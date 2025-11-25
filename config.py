@@ -17,6 +17,7 @@ class Config:
     SEPOLIA_RPC_URL = os.environ.get('SEPOLIA_RPC_URL')
     CONTRACT_ADDRESS = os.environ.get('CONTRACT_ADDRESS', '')
     PRIVATE_KEY = os.environ.get('PRIVATE_KEY', '')  # For signing transactions
+    CONTRACT_METADATA_PATH = os.environ.get('CONTRACT_METADATA_PATH')  # Optional metadata JSON file
     
     # OpenAI (require env var)
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')

@@ -24,7 +24,7 @@ A professional, Polymarket-inspired waitlist landing page for a prediction marke
 
 ## 🚀 Quick Deploy
 
-See **[DEPLOY.md](DEPLOY.md)** for complete deployment instructions.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for complete deployment instructions.
 
 **TL;DR:**
 1. Push to GitHub
@@ -67,7 +67,7 @@ TVB_Workshops/
 │   ├── css/style.css          # Polymarket-inspired styles
 │   └── js/app.js              # Geolocation + form handling
 ├── README.md                   # This file
-└── DEPLOY.md                   # Deployment guide
+└── DEPLOYMENT.md               # Deployment guide
 ```
 
 ---

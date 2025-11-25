@@ -2102,13 +2102,23 @@ body.dark-mode * {
     position: fixed;
     inset: 0;
     background: rgba(4, 7, 15, 0.92);
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
     z-index: 9999;
     transition: opacity 0.3s ease, visibility 0.3s ease;
     color: var(--text-primary);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+html[data-age-gate-status="required"] #AgeJurisdictionGate {
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 #AgeJurisdictionGate.age-gate-hidden {
@@ -2207,7 +2217,8 @@ body.dark-mode * {
     letter-spacing: -0.01em;
 }
 
-body.age-gate-locked {
+body.age-gate-locked,
+html.age-gate-prelock body {
     overflow: hidden;
 }
 

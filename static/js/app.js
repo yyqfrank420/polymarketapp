@@ -47,8 +47,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function initAgeGateModal() {
     const modal = document.getElementById('AgeJurisdictionGate');
+    const root = document.documentElement;
     if (!modal) {
         document.body.classList.remove('age-gate-locked');
+        if (root) {
+            root.classList.remove('age-gate-prelock');
+            if (!root.dataset.ageGateStatus) {
+                root.dataset.ageGateStatus = 'passed';
+            }
+        }
         return;
     }
     
@@ -91,15 +98,24 @@ function initAgeGateModal() {
 function toggleAgeGateVisibility(showModal) {
     const modal = document.getElementById('AgeJurisdictionGate');
     if (!modal) return;
+    const root = document.documentElement;
     
     if (showModal) {
         modal.classList.remove('age-gate-hidden');
         modal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('age-gate-locked');
+        if (root) {
+            root.dataset.ageGateStatus = 'required';
+            root.classList.add('age-gate-prelock');
+        }
     } else {
         modal.classList.add('age-gate-hidden');
         modal.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('age-gate-locked');
+        if (root) {
+            root.dataset.ageGateStatus = 'passed';
+            root.classList.remove('age-gate-prelock');
+        }
     }
 }
 
@@ -1095,7 +1111,7 @@ async function placeBetOnDetail(side) {
             if (body.status === 'queued' && body.queue_position > 0) {
                 // Bet is queued with other bets ahead - show warning
                 hasBeenInQueue = true;
-                showQueueWarning();
+            showQueueWarning();
                 showPersistentQueueIndicator();
             } else {
                 // Queue was empty (queue_position = 0) - processing immediately, no warning needed
