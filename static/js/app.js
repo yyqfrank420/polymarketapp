@@ -304,24 +304,9 @@ function renderHomeMarkets(markets) {
     document.getElementById('marketsEmpty').style.display = 'none';
     
     container.innerHTML = markets.map(m => {
-        const yesTotal = m.yes_total || 0;
-        const noTotal = m.no_total || 0;
-        const total = yesTotal + noTotal;
-        
-        // Use LMSR prices from market data (NOT volume totals!)
-        // Priority: yes_price_cents > yes_price * 100 > fallback to 50/50
-        let yesPercent, noPercent;
-        if (m.yes_price_cents !== undefined && m.no_price_cents !== undefined) {
-            yesPercent = m.yes_price_cents.toFixed(1);
-            noPercent = m.no_price_cents.toFixed(1);
-        } else if (m.yes_price !== undefined && m.no_price !== undefined) {
-            yesPercent = (m.yes_price * 100).toFixed(1);
-            noPercent = (m.no_price * 100).toFixed(1);
-        } else {
-            // Last resort: 50/50 (should never happen if market is initialized correctly)
-            yesPercent = '50.0';
-            noPercent = '50.0';
-        }
+        // Use LMSR prices from API (not calculated from totals!)
+        const yesPercent = (m.yes_price_cents !== undefined ? m.yes_price_cents : (m.yes_price ? m.yes_price * 100 : 50)).toFixed(0);
+        const noPercent = (m.no_price_cents !== undefined ? m.no_price_cents : (m.no_price ? m.no_price * 100 : 50)).toFixed(0);
         
         const statusClass = m.status === 'resolved' ? 'status-resolved' : 'status-open';
         const statusText = m.status === 'resolved' ? `Resolved: ${m.resolution}` : 'Open';
@@ -770,30 +755,13 @@ async function loadMarketDetail() {
         } catch (e) {
             console.warn('Price API failed, using market data prices:', e);
             // Use market data prices directly (they should be up-to-date)
+            // Use LMSR prices from market data (already calculated by backend)
             priceData = {
-                yes_price: marketData.market.yes_price,
-                no_price: marketData.market.no_price,
-                yes_price_cents: marketData.market.yes_price_cents,
-                no_price_cents: marketData.market.no_price_cents
+                yes_price: marketData.market.yes_price || 0.5,
+                no_price: marketData.market.no_price || 0.5,
+                yes_price_cents: marketData.market.yes_price_cents || (marketData.market.yes_price * 100) || 50,
+                no_price_cents: marketData.market.no_price_cents || (marketData.market.no_price * 100) || 50
             };
-            // If market data doesn't have prices, calculate from totals
-            if (!priceData.yes_price && !priceData.no_price) {
-                const yesTotal = marketData.market.yes_total || 0;
-                const noTotal = marketData.market.no_total || 0;
-                const total = yesTotal + noTotal;
-                if (total > 0) {
-                    priceData.yes_price = yesTotal / total;
-                    priceData.no_price = noTotal / total;
-                    priceData.yes_price_cents = priceData.yes_price * 100;
-                    priceData.no_price_cents = priceData.no_price * 100;
-                } else {
-                    // Last resort: use LMSR prices from market data
-                    priceData.yes_price = marketData.market.yes_price || 0.5;
-                    priceData.no_price = marketData.market.no_price || 0.5;
-                    priceData.yes_price_cents = priceData.yes_price * 100;
-                    priceData.no_price_cents = priceData.no_price * 100;
-                }
-            }
         }
         
         // Handle blockchain status
