@@ -307,8 +307,21 @@ function renderHomeMarkets(markets) {
         const yesTotal = m.yes_total || 0;
         const noTotal = m.no_total || 0;
         const total = yesTotal + noTotal;
-        const yesPercent = total > 0 ? ((yesTotal / total) * 100).toFixed(0) : 50;
-        const noPercent = total > 0 ? ((noTotal / total) * 100).toFixed(0) : 50;
+        
+        // Use LMSR prices from market data (NOT volume totals!)
+        // Priority: yes_price_cents > yes_price * 100 > fallback to 50/50
+        let yesPercent, noPercent;
+        if (m.yes_price_cents !== undefined && m.no_price_cents !== undefined) {
+            yesPercent = m.yes_price_cents.toFixed(1);
+            noPercent = m.no_price_cents.toFixed(1);
+        } else if (m.yes_price !== undefined && m.no_price !== undefined) {
+            yesPercent = (m.yes_price * 100).toFixed(1);
+            noPercent = (m.no_price * 100).toFixed(1);
+        } else {
+            // Last resort: 50/50 (should never happen if market is initialized correctly)
+            yesPercent = '50.0';
+            noPercent = '50.0';
+        }
         
         const statusClass = m.status === 'resolved' ? 'status-resolved' : 'status-open';
         const statusText = m.status === 'resolved' ? `Resolved: ${m.resolution}` : 'Open';
