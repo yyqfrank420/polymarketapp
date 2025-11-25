@@ -147,7 +147,7 @@ class ChatbotService:
                             },
                             "amount": {
                                 "type": "number", 
-                                "description": "Amount in USDC to bet"
+                                "description": "Amount in EURC to trade"
                             },
                             "wallet": {
                                 "type": "string", 
@@ -250,7 +250,7 @@ Examples: "2+2? That's 4! Want to check market odds?" or "That sounds tough! ðŸ’
 
 **Format markets:** "1. **Question** - YES: 65% | NO: 35%"
 **Response length:** 2-3 sentences max. Be concise and helpful.
-**Currency:** All amounts in USDC.
+**Currency:** All amounts in EURC.
 """
     
     def get_thread(self, thread_id):

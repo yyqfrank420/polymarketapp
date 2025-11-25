@@ -9,13 +9,20 @@ let currentAccount = null;
 let currentFilter = 'all';
 let allMarkets = [];
 let userBalance = 0.0;
+const AGE_GATE_KEY = 'ie_age_gate_passed';
+const COOKIE_CONSENT_KEY = 'ie_cookie_consent';
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+    initAgeGateModal();
+    initCookieConsentBanner();
     const path = window.location.pathname;
     
     // Common initialization
     tryInitWallet();
+    
+    // Check for persistent queue warning
+    checkPersistentQueueWarning();
     
     // Page-specific initialization
     if (path === '/' || path === '/index.html') {
@@ -37,6 +44,101 @@ document.addEventListener('DOMContentLoaded', function() {
         initAdminResolvePage();
     }
 });
+
+function initAgeGateModal() {
+    const modal = document.getElementById('AgeJurisdictionGate');
+    if (!modal) {
+        document.body.classList.remove('age-gate-locked');
+        return;
+    }
+    
+    const form = document.getElementById('ageGateForm');
+    const errorEl = document.getElementById('ageGateError');
+    const checkboxes = modal.querySelectorAll('input[type="checkbox"]');
+    const hasPassed = localStorage.getItem(AGE_GATE_KEY) === 'true';
+    
+    toggleAgeGateVisibility(!hasPassed);
+    
+    if (form) {
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            
+            if (!allChecked) {
+                if (errorEl) {
+                    errorEl.textContent = 'Please confirm all required statements to continue.';
+                }
+                return;
+            }
+            
+            if (errorEl) {
+                errorEl.textContent = '';
+            }
+            localStorage.setItem(AGE_GATE_KEY, 'true');
+            toggleAgeGateVisibility(false);
+        });
+    }
+    
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', () => {
+            if (errorEl) {
+                errorEl.textContent = '';
+            }
+        });
+    });
+}
+
+function toggleAgeGateVisibility(showModal) {
+    const modal = document.getElementById('AgeJurisdictionGate');
+    if (!modal) return;
+    
+    if (showModal) {
+        modal.classList.remove('age-gate-hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('age-gate-locked');
+    } else {
+        modal.classList.add('age-gate-hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('age-gate-locked');
+    }
+}
+
+function initCookieConsentBanner() {
+    const banner = document.getElementById('cookieConsentBanner');
+    if (!banner) return;
+    
+    const acceptBtn = document.getElementById('cookieAcceptBtn');
+    const manageBtn = document.getElementById('cookieManageBtn');
+    const hasConsent = localStorage.getItem(COOKIE_CONSENT_KEY) === 'accepted';
+    
+    toggleCookieBanner(!hasConsent);
+    
+    if (acceptBtn) {
+        acceptBtn.addEventListener('click', () => {
+            localStorage.setItem(COOKIE_CONSENT_KEY, 'accepted');
+            toggleCookieBanner(false);
+        });
+    }
+    
+    if (manageBtn) {
+        manageBtn.addEventListener('click', () => {
+            window.location.href = '/gdpr#cookies';
+        });
+    }
+}
+
+function toggleCookieBanner(showBanner) {
+    const banner = document.getElementById('cookieConsentBanner');
+    if (!banner) return;
+    
+    if (showBanner) {
+        banner.classList.remove('cookie-consent-hidden');
+        banner.setAttribute('aria-hidden', 'false');
+    } else {
+        banner.classList.add('cookie-consent-hidden');
+        banner.setAttribute('aria-hidden', 'true');
+    }
+}
 
 // ========== UTILITY FUNCTIONS ==========
 function formatNumberWithCommas(num, decimals = 2) {
@@ -148,7 +250,7 @@ function updateHomeStats(markets) {
     const uniqueWallets = new Set();
     
     document.getElementById('totalMarkets').textContent = totalMarkets;
-    document.getElementById('totalVolume').textContent = `$${formatNumber(totalVolume)}`;
+    document.getElementById('totalVolume').textContent = `€${formatNumber(totalVolume)}`;
     document.getElementById('totalTraders').textContent = uniqueWallets.size || '0';
 }
 
@@ -290,7 +392,7 @@ async function loadActivityFeed() {
                     return `
                         <div class="activity-transaction ${rollClass}" data-transaction-id="${item.id}">
                             <span class="activity-item-side ${item.side.toLowerCase()}">${item.side}</span>
-                            <span class="activity-amount">${formatNumberWithCommas(item.amount, 2)} USDC</span>
+                            <span class="activity-amount">${formatNumberWithCommas(item.amount, 2)} EURC</span>
                             <span class="activity-shares">${formatNumberWithCommas(item.shares, 2)} shares</span>
                             <span class="activity-item-wallet">${walletShort}</span>
                             <span class="activity-item-time">${timeAgo}</span>
@@ -345,7 +447,7 @@ async function loadActivityFeed() {
         } else {
             feedContainer.innerHTML = `
                 <div class="text-center py-5" style="color: var(--text-secondary);">
-                    <p style="font-size: 1rem; font-weight: 500; margin: 0;">No recent activity yet. Be the first to place a bet!</p>
+                    <p style="font-size: 1rem; font-weight: 500; margin: 0;">No recent activity yet. Be the first to place a trade!</p>
                 </div>
             `;
         }
@@ -464,6 +566,9 @@ function initializeResizeHandlers() {
 
 // ========== MARKET DETAIL PAGE ==========
 let selectedSide = null; // 'YES' or 'NO' or null
+let expectedShares = null; // Expected shares when trade was submitted (for slippage detection)
+let hasBeenInQueue = false; // Track if user has ever entered the queue
+let persistentQueueWarning = null; // Persistent warning indicator
 // MARKET_ID is set by the template (window.MARKET_ID) or extracted from URL
 
 function initMarketDetailPage() {
@@ -558,11 +663,29 @@ function selectSide(side) {
         amountSection.style.display = 'block';
     }
     
+    // Show risk confirmation section
+    const riskConfirmationSection = document.getElementById('riskConfirmationSection');
+    if (riskConfirmationSection) {
+        riskConfirmationSection.style.display = 'block';
+    }
+    
     // Update buy button text
     const buyBtn = document.getElementById('buyButton');
     if (buyBtn) {
-    buyBtn.textContent = `Buy ${side}`;
+        buyBtn.textContent = `Place Trade`;
     buyBtn.style.display = 'block';
+        // Disable until risk confirmation is checked
+        buyBtn.disabled = true;
+    }
+    
+    // Setup risk confirmation checkbox listener
+    const riskCheckbox = document.getElementById('riskConfirmationCheckbox');
+    if (riskCheckbox) {
+        riskCheckbox.addEventListener('change', function() {
+            if (buyBtn) {
+                buyBtn.disabled = !this.checked;
+            }
+        });
     }
     
     // Keep input value when switching sides - just update preview
@@ -734,8 +857,8 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
                     <strong>Status:</strong> 
                     ${isResolved ? `<span class="badge bg-primary">Resolved: ${market.resolution || 'Unknown'}</span>` : '<span class="badge bg-success">Open</span>'}
                 </div>
-                <div class="col-md-4"><strong>Total Volume:</strong> $${formatNumberWithCommas(total, 2)}</div>
-                <div class="col-md-4"><strong>Bets:</strong> ${market.bet_count || 0}</div>
+                <div class="col-md-4"><strong>Total Volume:</strong> €${formatNumberWithCommas(total, 2)}</div>
+                <div class="col-md-4"><strong>Trades:</strong> ${market.bet_count || 0}</div>
             </div>
         </div>
     `;
@@ -763,7 +886,7 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
             <span class="odds-label">NO</span>
         </div>
         <div class="mt-3 text-muted small text-center">
-            Each share pays $1.00 if correct
+            Each share pays €1.00 if correct
         </div>
     `;
     
@@ -794,7 +917,7 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
         }, 500);
     }
     
-    // Disable betting if resolved
+    // Disable trading if resolved
     const selectYesBtn = document.getElementById('selectYesBtn');
     const selectNoBtn = document.getElementById('selectNoBtn');
     const betAmountInput = document.getElementById('betAmountInput');
@@ -847,7 +970,7 @@ function updateTradePreview() {
         previewDiv.style.display = 'none';
         // Reset balance display to current balance
         if (balanceDisplay) {
-            balanceDisplay.innerHTML = `${formatNumberWithCommas(userBalance, 2)} USDC`;
+            balanceDisplay.innerHTML = `${formatNumberWithCommas(userBalance, 2)} EURC`;
             balanceDisplay.style.color = '';
         }
         return;
@@ -861,7 +984,7 @@ function updateTradePreview() {
     const shares = inputValue / price;
     const roundedShares = Math.round(shares * 100) / 100;
     
-    // Potential win is shares * 1 USDC
+    // Potential win is shares * 1 EURC
     const potentialWin = roundedShares * 1.0;
     const profit = potentialWin - inputValue;
     
@@ -872,15 +995,15 @@ function updateTradePreview() {
     
     // Update preview - separate raw profit (white) and net profit (green)
     document.getElementById('previewShares').textContent = `${formatNumberWithCommas(roundedShares, 2)} shares`;
-    document.getElementById('previewWinAmount').textContent = `${formatNumberWithCommas(potentialWin, 2)} USDC`;
-    document.getElementById('previewWinProfit').textContent = `(+${formatNumberWithCommas(profit, 2)} USDC)`;
+        document.getElementById('previewWinAmount').textContent = `${formatNumberWithCommas(potentialWin, 2)} EURC`;
+        document.getElementById('previewWinProfit').textContent = `(+${formatNumberWithCommas(profit, 2)} EURC)`;
     
     // Show "after fee" only if there's a profit
     const afterFeeRow = document.getElementById('previewAfterFeeRow');
     const afterFeeText = document.getElementById('previewAfterFee');
     if (profit > 0 && fee > 0) {
         afterFeeRow.style.display = 'flex';
-        afterFeeText.textContent = `(${formatNumberWithCommas(netAmount, 2)} USDC after 2% fee)`;
+        afterFeeText.textContent = `(${formatNumberWithCommas(netAmount, 2)} EURC after 2% fee)`;
     } else {
         afterFeeRow.style.display = 'none';
     }
@@ -890,10 +1013,10 @@ function updateTradePreview() {
         const remainingBalance = userBalance - inputValue;
         if (remainingBalance < 0) {
             // Insufficient balance - show in red
-            balanceDisplay.innerHTML = `<span style="color: var(--red-no); font-weight: 700;">${formatNumberWithCommas(userBalance, 2)} USDC (Insufficient!)</span>`;
+            balanceDisplay.innerHTML = `<span style="color: var(--red-no); font-weight: 700;">${formatNumberWithCommas(userBalance, 2)} EURC (Insufficient!)</span>`;
         } else {
             // Show only remaining balance (highlighted)
-            balanceDisplay.innerHTML = `<span style="color: var(--blue-primary); font-weight: 800;">${formatNumberWithCommas(remainingBalance, 2)} USDC</span>`;
+            balanceDisplay.innerHTML = `<span style="color: var(--blue-primary); font-weight: 800;">${formatNumberWithCommas(remainingBalance, 2)} EURC</span>`;
         }
     }
 }
@@ -901,6 +1024,13 @@ function updateTradePreview() {
 function executeBuy() {
     if (!selectedSide) {
         showMessage('Please select Yes or No first', 'error', 'tradingMessage');
+        return;
+    }
+    
+    // Check risk confirmation checkbox
+    const riskCheckbox = document.getElementById('riskConfirmationCheckbox');
+    if (!riskCheckbox || !riskCheckbox.checked) {
+        showMessage('Please confirm that you understand the financial risks involved', 'error', 'tradingMessage');
         return;
     }
     
@@ -926,8 +1056,32 @@ async function placeBetOnDetail(side) {
     
     const amount = Math.round(inputValue * 100) / 100;
     
+    // Check if user has sufficient balance
+    if (amount > userBalance) {
+        showMessage(`Insufficient balance. You have ${formatNumberWithCommas(userBalance, 2)} EURC`, 'error', 'tradingMessage');
+        return;
+    }
+    
+    // Get expected shares using LMSR calculation (same as backend) for accurate slippage detection
     try {
-        showMessage('Placing bet...', 'info', 'tradingMessage');
+        const previewRes = await fetch(`/api/markets/${window.MARKET_ID}/preview?amount=${amount}&side=${side}`);
+        if (previewRes.ok) {
+            const previewData = await previewRes.json();
+            if (previewData.success) {
+                expectedShares = previewData.shares;
+            } else {
+                expectedShares = null;
+            }
+        } else {
+            expectedShares = null;
+        }
+    } catch (e) {
+        console.error('Failed to get trade preview', e);
+        expectedShares = null;
+    }
+    
+    try {
+        showMessage('Placing trade...', 'info', 'tradingMessage');
         
         const res = await fetch(`/api/markets/${window.MARKET_ID}/bet`, {
         method: 'POST',
@@ -937,25 +1091,33 @@ async function placeBetOnDetail(side) {
         
     const body = await res.json();
         
-        if (res.status === 202 && body.status === 'queued') {
-            // Bet is queued, show warning popup
-            showQueueWarning();
-            // Poll for completion
-            pollBetStatus(body.request_id);
+        if (res.status === 202) {
+            if (body.status === 'queued' && body.queue_position > 0) {
+                // Bet is queued with other bets ahead - show warning
+                hasBeenInQueue = true;
+                showQueueWarning();
+                showPersistentQueueIndicator();
+            } else {
+                // Queue was empty (queue_position = 0) - processing immediately, no warning needed
+                // Just show processing message
+                showMessage('Processing trade...', 'info', 'tradingMessage');
+            }
+            // Poll for completion regardless
+            pollTradeStatus(body.request_id, amount, side);
         } else if (res.ok && body.success) {
             // Immediate success (backward compatibility)
             const actualShares = body.shares || 0;
             const totalCost = formatNumberWithCommas(amount, 2);
-            showMessage(`Bet placed! You bought ${formatNumberWithCommas(actualShares, 2)} shares for ${totalCost} USDC`, 'success', 'tradingMessage');
+            showMessage(`Trade placed! You bought ${formatNumberWithCommas(actualShares, 2)} shares for ${totalCost} EURC`, 'success', 'tradingMessage');
             resetBetUI();
             await loadMarketDetail();
             updateTradePreview();
     } else {
-            showMessage(body.message || 'Failed to place bet', 'error', 'tradingMessage');
+            showMessage(body.message || 'Failed to place trade', 'error', 'tradingMessage');
         }
     } catch (e) {
-        console.error('Failed to place bet', e);
-        showMessage('Error placing bet', 'error', 'tradingMessage');
+        console.error('Failed to place trade', e);
+        showMessage('Error placing trade', 'error', 'tradingMessage');
     }
 }
 
@@ -970,8 +1132,8 @@ function showQueueWarning() {
     popup.innerHTML = `
         <div class="queue-warning-content">
             <div class="queue-warning-icon">⚠️</div>
-            <h5>Bet in Queue</h5>
-            <p>Your bet is being processed. Prices may change while you wait!</p>
+            <h5>Trade in Queue</h5>
+            <p>Your trade is being processed. Prices may change while you wait!</p>
             <p class="queue-warning-subtitle">Market prices update in real-time</p>
             <div class="queue-warning-loader">
                 <div class="spinner-border spinner-border-sm" role="status" style="margin-top: 0.5rem;">
@@ -985,7 +1147,44 @@ function showQueueWarning() {
     // Animate in
     setTimeout(() => popup.classList.add('show'), 10);
     
-    // NO auto-hide - popup persists until bet is processed
+    // NO auto-hide - popup persists until trade is processed
+}
+
+function showPersistentQueueIndicator() {
+    // Show persistent indicator that user has been in queue
+    if (persistentQueueWarning) return; // Already showing
+    
+    const indicator = document.createElement('div');
+    indicator.id = 'persistentQueueWarning';
+    indicator.className = 'persistent-queue-indicator';
+    indicator.innerHTML = `
+        <div class="persistent-queue-content">
+            <span class="persistent-queue-icon">⚠️</span>
+            <span class="persistent-queue-text">You've experienced queue delays. Prices may change while trades process.</span>
+            <button class="persistent-queue-close" onclick="hidePersistentQueueIndicator()">×</button>
+        </div>
+    `;
+    document.body.appendChild(indicator);
+    persistentQueueWarning = indicator;
+    
+    // Store in localStorage so it persists across page reloads
+    localStorage.setItem('has_been_in_queue', 'true');
+}
+
+function hidePersistentQueueIndicator() {
+    if (persistentQueueWarning) {
+        persistentQueueWarning.remove();
+        persistentQueueWarning = null;
+    }
+    localStorage.removeItem('has_been_in_queue');
+}
+
+// Check on page load if user has been in queue
+function checkPersistentQueueWarning() {
+    if (localStorage.getItem('has_been_in_queue') === 'true') {
+        hasBeenInQueue = true;
+        showPersistentQueueIndicator();
+    }
 }
 
 function hideQueueWarning() {
@@ -996,7 +1195,7 @@ function hideQueueWarning() {
     }
 }
 
-async function pollBetStatus(requestId) {
+async function pollTradeStatus(requestId, submittedAmount, submittedSide) {
     const maxAttempts = 30; // 30 seconds max
     let attempts = 0;
     
@@ -1006,19 +1205,39 @@ async function pollBetStatus(requestId) {
         const data = await res.json();
             
             if (data.success !== undefined && data.status !== 'processing') {
-                // Bet completed
+                // Trade completed
                 hideQueueWarning();
                 if (data.success) {
-                    const shares = data.shares || 0;
+                    const actualShares = data.shares || 0;
                     const price = data.price_per_share || 0;
-                    showMessage(`Bet placed! ${formatNumberWithCommas(shares, 2)} shares @ ${formatNumberWithCommas(price * 100, 1)}¢`, 'success', 'tradingMessage');
+                    const betId = data.bet_id;
+                    
+                    // Check for slippage (>5% difference)
+                    if (expectedShares !== null && expectedShares > 0) {
+                        const slippagePercent = Math.abs((actualShares - expectedShares) / expectedShares) * 100;
+                        
+                        if (slippagePercent > 5) {
+                            // Show slippage warning popup with undo option
+                            showSlippageWarning(actualShares, expectedShares, slippagePercent, betId, submittedAmount, submittedSide);
+                            // Don't show success message yet - wait for user decision
+                        } else {
+                            // Normal success message
+                            showMessage(`Trade placed! ${formatNumberWithCommas(actualShares, 2)} shares @ €${formatNumberWithCommas(price, 2)}`, 'success', 'tradingMessage');
                     resetBetUI();
-                    // Reload balance after bet
                     await loadUserBalance();
                     await loadMarketDetail();
                     updateTradePreview();
+                        }
                 } else {
-                    showMessage(data.message || 'Bet failed', 'error', 'tradingMessage');
+                        // No expected shares stored, just show success
+                        showMessage(`Trade placed! ${formatNumberWithCommas(actualShares, 2)} shares @ €${formatNumberWithCommas(price, 2)}`, 'success', 'tradingMessage');
+                        resetBetUI();
+                        await loadUserBalance();
+                        await loadMarketDetail();
+                        updateTradePreview();
+                    }
+                } else {
+                    showMessage(data.message || 'Trade failed', 'error', 'tradingMessage');
                 }
                 return;
             }
@@ -1028,7 +1247,7 @@ async function pollBetStatus(requestId) {
                 setTimeout(poll, 1000); // Poll every second
             } else {
                 hideQueueWarning();
-                showMessage('Bet processing is taking longer than expected. Please check your portfolio.', 'warning', 'tradingMessage');
+                showMessage('Trade processing is taking longer than expected. Please check your portfolio.', 'warning', 'tradingMessage');
             }
     } catch (e) {
             console.error('Error polling bet status', e);
@@ -1044,14 +1263,124 @@ async function pollBetStatus(requestId) {
     poll();
 }
 
+function showSlippageWarning(actualShares, expectedShares, slippagePercent, betId, amount, side) {
+    // Remove any existing slippage popup
+    const existing = document.getElementById('slippageWarningPopup');
+    if (existing) existing.remove();
+    
+    const popup = document.createElement('div');
+    popup.id = 'slippageWarningPopup';
+    popup.className = 'slippage-warning-popup';
+    popup.innerHTML = `
+        <div class="slippage-warning-content">
+            <div class="slippage-warning-icon">⚠️</div>
+            <h5>Price Slippage Detected</h5>
+            <p>Your trade executed with significant price movement:</p>
+            <div class="slippage-details">
+                <div class="slippage-row">
+                    <span class="slippage-label">Expected shares:</span>
+                    <span class="slippage-value">${formatNumberWithCommas(expectedShares, 2)}</span>
+                </div>
+                <div class="slippage-row">
+                    <span class="slippage-label">Actual shares:</span>
+                    <span class="slippage-value">${formatNumberWithCommas(actualShares, 2)}</span>
+                </div>
+                <div class="slippage-row">
+                    <span class="slippage-label">Difference:</span>
+                    <span class="slippage-value slippage-bad">${slippagePercent > 0 ? '+' : ''}${formatNumberWithCommas(slippagePercent, 1)}%</span>
+                </div>
+            </div>
+            <p class="slippage-note">Prices changed while your trade was in the queue. You can undo this transaction if you're not satisfied.</p>
+            <div class="slippage-actions">
+                <button class="btn btn-secondary slippage-keep" onclick="keepTrade(${betId})">Keep Trade</button>
+                <button class="btn btn-danger slippage-undo" onclick="undoTrade(${betId}, ${amount})">Undo Transaction</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(popup);
+    
+    // Animate in
+    setTimeout(() => popup.classList.add('show'), 10);
+}
+
+function hideSlippageWarning() {
+    const popup = document.getElementById('slippageWarningPopup');
+    if (popup) {
+        popup.classList.remove('show');
+        setTimeout(() => popup.remove(), 300);
+    }
+}
+
+async function keepTrade(betId) {
+    hideSlippageWarning();
+    showMessage(`Trade kept. Transaction completed.`, 'success', 'tradingMessage');
+    resetBetUI();
+    await loadUserBalance();
+    await loadMarketDetail();
+    updateTradePreview();
+}
+
+async function undoTrade(betId, amount) {
+    if (!currentAccount) {
+        showMessage('Wallet not connected', 'error', 'tradingMessage');
+        return;
+    }
+    
+    try {
+        showMessage('Undoing transaction...', 'info', 'tradingMessage');
+        
+        const res = await fetch(`/api/bets/${betId}/undo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: currentAccount })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            hideSlippageWarning();
+            showMessage(`Transaction undone. Refunded ${formatNumberWithCommas(data.refunded_amount, 2)} EURC`, 'success', 'tradingMessage');
+            resetBetUI();
+            await loadUserBalance();
+            await loadMarketDetail();
+            updateTradePreview();
+        } else {
+            showMessage(data.message || 'Failed to undo transaction', 'error', 'tradingMessage');
+        }
+    } catch (e) {
+        console.error('Failed to undo trade', e);
+        showMessage('Error undoing transaction', 'error', 'tradingMessage');
+    }
+}
+
 function resetBetUI() {
-    document.getElementById('betAmountInput').value = '';
+    const betInput = document.getElementById('betAmountInput');
+    if (betInput) betInput.value = '';
     selectedSide = null;
-    document.getElementById('amountSection').style.display = 'none';
-    document.getElementById('tradePreview').style.display = 'none';
-    document.getElementById('buyButton').style.display = 'none';
-    document.getElementById('selectYesBtn').classList.remove('selected');
-    document.getElementById('selectNoBtn').classList.remove('selected');
+    expectedShares = null; // Reset expected shares
+    
+    const amountSection = document.getElementById('amountSection');
+    if (amountSection) amountSection.style.display = 'none';
+    
+    const tradePreview = document.getElementById('tradePreview');
+    if (tradePreview) tradePreview.style.display = 'none';
+    
+    const riskSection = document.getElementById('riskConfirmationSection');
+    if (riskSection) riskSection.style.display = 'none';
+    
+    const buyBtn = document.getElementById('buyButton');
+    if (buyBtn) {
+        buyBtn.style.display = 'none';
+        buyBtn.disabled = true;
+    }
+    const riskCheckbox = document.getElementById('riskConfirmationCheckbox');
+    if (riskCheckbox) {
+        riskCheckbox.checked = false;
+    }
+    const yesBtn = document.getElementById('selectYesBtn');
+    if (yesBtn) yesBtn.classList.remove('selected');
+    const noBtn = document.getElementById('selectNoBtn');
+    if (noBtn) noBtn.classList.remove('selected');
 }
 
 // ========== MY BETS PAGE ==========
@@ -1137,17 +1466,17 @@ function renderUserBets(bets) {
     const returnPct = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
     
     // Update NAV
-    document.getElementById('navValue').textContent = `${formatNumberWithCommas(navValue, 2)} USDC`;
+    document.getElementById('navValue').textContent = `€${formatNumberWithCommas(navValue, 2)}`;
     const navChangeEl = document.getElementById('navChange');
     navChangeEl.className = `nav-change ${totalPL > 0 ? 'positive' : (totalPL < 0 ? 'negative' : '')}`;
     navChangeEl.innerHTML = `
-        <span class="nav-change-amount">${totalPL > 0 ? '+' : ''}${formatNumberWithCommas(totalPL, 2)} USDC</span>
+        <span class="nav-change-amount">${totalPL > 0 ? '+' : ''}€${formatNumberWithCommas(totalPL, 2)}</span>
         <span class="nav-change-percent">(${returnPct > 0 ? '+' : ''}${formatNumberWithCommas(returnPct, 2)}%)</span>
     `;
     
     // Update metric cards
     document.getElementById('openPositions').textContent = formatNumberWithCommas(openPositions.length, 0);
-    document.getElementById('totalInvested').textContent = `${formatNumberWithCommas(totalInvested, 2)} USDC`;
+    document.getElementById('totalInvested').textContent = `€${formatNumberWithCommas(totalInvested, 2)}`;
     
     // Update performance metrics
     const realizedPLEl = document.getElementById('realizedPL');
@@ -1461,6 +1790,7 @@ async function sellShares(betId, marketId, totalShares) {
 function initAdminDashboard() {
     loadAdminStats();
     loadUserDatabase();
+    loadKYCDatabase();
     
     // Load activity feed
     loadActivityFeed();
@@ -1513,9 +1843,9 @@ async function loadUserDatabase() {
             const authStatus = user.auth_status || 'unverified';
             let authBadge = '';
             if (authStatus === 'verified') {
-                authBadge = '<span class="badge bg-success">✓ Verified</span>';
+                authBadge = '<span class="badge bg-success">Verified</span>';
             } else if (authStatus === 'rejected') {
-                authBadge = '<span class="badge bg-danger">✕ Rejected</span>';
+                authBadge = '<span class="badge bg-danger">Rejected</span>';
             } else {
                 authBadge = '<span class="badge bg-secondary">Unverified</span>';
             }
@@ -1524,24 +1854,22 @@ async function loadUserDatabase() {
                 <tr>
                     <td>
                         <code style="font-size: 0.85rem;">${walletShort}</code>
-                        <button class="btn btn-sm btn-link text-primary p-0 ms-2" onclick="navigator.clipboard.writeText('${user.wallet}')" title="Copy full address">
-                            📋
-                        </button>
+                        <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="navigator.clipboard.writeText('${user.wallet}')" title="Copy full address" style="font-size: 0.75rem;">Copy</button>
                     </td>
                     <td>${authBadge}</td>
-                    <td class="text-end"><strong>${formatNumberWithCommas(user.balance, 2)} USDC</strong></td>
+                    <td class="text-end"><strong>${formatNumberWithCommas(user.balance, 2)} EURC</strong></td>
                     <td class="text-end">${formatNumberWithCommas(user.total_bets, 0)}</td>
-                    <td class="text-end">${formatNumberWithCommas(user.total_bet_amount, 2)} USDC</td>
+                    <td class="text-end">${formatNumberWithCommas(user.total_bet_amount, 2)} EURC</td>
                     <td class="text-end">${formatNumberWithCommas(user.open_positions, 0)}</td>
                     <td>${createdDate}</td>
                     <td>${lastLogin}</td>
                     <td class="text-end">
                         <div class="btn-group" role="group">
-                            <button class="btn btn-sm btn-primary" onclick="showCreditModalForUser('${user.wallet}')" title="Credit user">
-                                💸 Credit
+                            <button class="btn btn-sm btn-outline-primary" onclick="showCreditModalForUser('${user.wallet}')" title="Credit user">
+                                Credit
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.wallet}')" title="Delete user (auto-sells positions)">
-                                🗑️ Delete
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${user.wallet}')" title="Delete user">
+                                Delete
                             </button>
                         </div>
                     </td>
@@ -1587,23 +1915,180 @@ async function deleteUser(wallet) {
         const data = await res.json();
         
         if (res.ok && data.success) {
-            alert(`✅ ${data.message}`);
-            // Reload user database
+            alert(data.message);
             await loadUserDatabase();
-            // Reload admin stats
             await loadAdminStats();
         } else {
-            alert(`❌ Failed to delete user: ${data.error || data.message || 'Unknown error'}`);
+            alert('Failed to delete user: ' + (data.error || data.message || 'Unknown error'));
         }
     } catch (e) {
         console.error('Failed to delete user', e);
-        alert(`❌ Error deleting user: ${e.message}`);
+        alert('Error deleting user: ' + e.message);
+    }
+}
+
+async function loadKYCDatabase() {
+    try {
+        const res = await fetch('/api/admin/kyc');
+        const data = await res.json();
+        
+        const tbody = document.getElementById('kycDatabaseTableBody');
+        if (!tbody) return;
+        
+        if (!res.ok || !data.verifications || data.verifications.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13" class="text-center py-4 text-muted">No KYC verifications found</td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = data.verifications.map(kyc => {
+            const walletShort = kyc.wallet ? `${kyc.wallet.slice(0, 6)}...${kyc.wallet.slice(-4)}` : 'N/A';
+            const status = kyc.status || 'pending';
+            
+            // Status badge
+            let statusBadge = '';
+            if (status === 'verified') {
+                statusBadge = '<span class="badge bg-success">Verified</span>';
+            } else if (status === 'rejected') {
+                statusBadge = '<span class="badge bg-danger">Rejected</span>';
+            } else {
+                statusBadge = '<span class="badge bg-secondary">Pending</span>';
+            }
+            
+            // Document type formatting
+            const docType = kyc.document_type ? kyc.document_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : '—';
+            
+            // Official document indicator
+            const officialDoc = kyc.is_official_document ? '<span class="text-success">Yes</span>' : '<span class="text-muted">No</span>';
+            
+            // Dates
+            const submittedDate = kyc.created_at ? new Date(kyc.created_at).toLocaleString() : 'N/A';
+            const verifiedDate = kyc.verified_at ? new Date(kyc.verified_at).toLocaleString() : '—';
+            const expiryDate = kyc.expiry_date || '—';
+            
+            // Check if expired (if expiry_date exists and is in the past)
+            let expiryDisplay = expiryDate;
+            if (expiryDate && expiryDate !== '—') {
+                try {
+                    const expiry = new Date(expiryDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (expiry < today) {
+                        expiryDisplay = `<span class="text-danger" title="Document expired">${expiryDate}</span>`;
+                    } else {
+                        expiryDisplay = expiryDate;
+                    }
+                } catch (e) {
+                    // Invalid date format, just display as-is
+                    expiryDisplay = expiryDate;
+                }
+            }
+            
+            // Notes (truncate if too long)
+            const notes = kyc.verification_notes ? (kyc.verification_notes.length > 50 ? kyc.verification_notes.substring(0, 50) + '...' : kyc.verification_notes) : '—';
+            
+            return `
+                <tr>
+                    <td>
+                        <code style="font-size: 0.85rem;">${walletShort}</code>
+                        ${kyc.wallet ? `<button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="navigator.clipboard.writeText('${kyc.wallet}')" title="Copy full address" style="font-size: 0.75rem;">Copy</button>` : ''}
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td>${kyc.full_name || '—'}</td>
+                    <td>${kyc.date_of_birth || '—'}</td>
+                    <td>${expiryDisplay}</td>
+                    <td>${kyc.nationality || '—'}</td>
+                    <td>${docType}</td>
+                    <td><code style="font-size: 0.85rem;">${kyc.document_number || '—'}</code></td>
+                    <td class="text-center">${officialDoc}</td>
+                    <td>${submittedDate}</td>
+                    <td>${verifiedDate}</td>
+                    <td><small class="text-muted">${escapeHtml(notes)}</small></td>
+                    <td class="text-end">
+                        ${kyc.wallet ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteKYCVerification('${kyc.wallet}')" title="Delete KYC verification">Delete</button>` : '—'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Failed to load KYC database', e);
+        const tbody = document.getElementById('kycDatabaseTableBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13" class="text-center py-4 text-danger">Error loading KYC verifications: ${e.message}</td>
+                </tr>
+            `;
+        }
+    }
+}
+
+async function deleteKYCVerification(wallet) {
+    const walletShort = wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'this wallet';
+    const confirmMsg = `Are you sure you want to DELETE the KYC verification for ${walletShort}?\n\nThis will:\n• Remove the KYC verification record\n• Reset user auth status to unverified\n\nThis action cannot be undone!`;
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/admin/kyc/${wallet}/delete`, {
+            method: 'DELETE'
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            alert(`✅ ${data.message}`);
+            // Reload KYC database
+            await loadKYCDatabase();
+        } else {
+            alert(`❌ Failed to delete KYC verification: ${data.error || data.message || 'Unknown error'}`);
+        }
+    } catch (e) {
+        console.error('Failed to delete KYC verification', e);
+        alert(`❌ Error deleting KYC verification: ${e.message}`);
+    }
+}
+
+async function clearAllKYC() {
+    const confirmMsg = `⚠️ WARNING: Are you sure you want to CLEAR ALL KYC VERIFICATIONS?\n\nThis will:\n• Delete ALL KYC verification records\n• Reset ALL user auth statuses to unverified\n• This affects ALL users in the database\n\nThis action CANNOT be undone!\n\nType "DELETE ALL" to confirm:`;
+    
+    const userInput = prompt(confirmMsg);
+    if (userInput !== 'DELETE ALL') {
+        alert('❌ Clear cancelled. You must type "DELETE ALL" to confirm.');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/admin/kyc/clear', {
+            method: 'DELETE'
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            alert(`✅ ${data.message}\n\nDeleted ${data.deleted_count} KYC verification(s).`);
+            // Reload KYC database
+            await loadKYCDatabase();
+        } else {
+            alert(`❌ Failed to clear KYC verifications: ${data.error || data.message || 'Unknown error'}`);
+        }
+    } catch (e) {
+        console.error('Failed to clear KYC verifications', e);
+        alert(`❌ Error clearing KYC verifications: ${e.message}`);
     }
 }
 
 // Make admin functions globally accessible
 window.loadUserDatabase = loadUserDatabase;
+window.loadKYCDatabase = loadKYCDatabase;
 window.deleteUser = deleteUser;
+window.deleteKYCVerification = deleteKYCVerification;
+window.clearAllKYC = clearAllKYC;
 window.showCreditModalForUser = showCreditModalForUser;
 
 // ========== ADMIN CREATE MARKET ==========
@@ -1655,6 +2140,12 @@ async function handleAdminCreateMarket(e) {
         return;
     }
     
+    // Validate end_date if blockchain deployment is requested
+    if (deployBlockchain && !endDate) {
+        showMessage('End date is required when deploying to blockchain', 'error', 'createMessageContainer');
+        return;
+    }
+    
     try {
         let endpoint = '/api/markets';
         if (deployBlockchain) {
@@ -1686,10 +2177,13 @@ async function handleAdminCreateMarket(e) {
                 window.location.href = '/admin';
             }, 3000);
         } else {
-            showMessage(body.message || 'Failed to create market', 'error', 'createMessageContainer');
+            const errorMsg = body.message || body.error || 'Failed to create market';
+            showMessage(errorMsg, 'error', 'createMessageContainer');
+            console.error('Market creation error:', body);
         }
     } catch (e) {
-        showMessage('Error creating market', 'error', 'createMessageContainer');
+        console.error('Market creation exception:', e);
+        showMessage('Error creating market: ' + (e.message || 'Unknown error'), 'error', 'createMessageContainer');
     }
 }
 
@@ -1775,9 +2269,9 @@ async function adminResolveMarket(marketId, outcome) {
             let message = `✅ Market resolved as ${outcome}!`;
             if (body.payouts_distributed && body.total_payout > 0) {
                 message += `\n\n💰 Payouts Distributed:\n`;
-                message += `  • Total: ${formatNumberWithCommas(body.total_payout, 2)} USDC\n`;
+                message += `  • Total: ${formatNumberWithCommas(body.total_payout, 2)} EURC\n`;
                 if (body.total_fees && body.total_fees > 0) {
-                    message += `  • Fees: ${formatNumberWithCommas(body.total_fees, 2)} USDC (2% on profits)\n`;
+                    message += `  • Fees: ${formatNumberWithCommas(body.total_fees, 2)} EURC (2% on profits)\n`;
                 }
                 message += `  • Winners: ${body.winners_count} user(s)\n`;
                 message += `\nWinner balances have been automatically updated!`;
@@ -1826,7 +2320,7 @@ async function viewPayouts(marketId) {
                 <thead>
                     <tr>
                         <th>Wallet</th>
-                        <th>Total Bet</th>
+                        <th>Total Trade Amount</th>
                         <th>Payout</th>
                         <th>Profit/Loss</th>
                     </tr>
@@ -1881,7 +2375,7 @@ async function connectWallet() {
     }
     try {
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        currentAccount = accounts[0];
+        currentAccount = accounts[0]?.toLowerCase();  // Normalize to lowercase
         updateWalletUI();
         
         // Load balance on connect (auto-credits if new user)
@@ -1907,7 +2401,7 @@ async function tryInitWallet() {
         try {
             const accounts = await window.ethereum.request({ method: 'eth_accounts' });
             if (accounts && accounts.length) {
-                currentAccount = accounts[0];
+                currentAccount = accounts[0]?.toLowerCase();  // Normalize to lowercase
                 updateWalletUI();
                 
                 // Load balance on init
@@ -1925,7 +2419,7 @@ async function tryInitWallet() {
                 }
             }
             window.ethereum.on('accountsChanged', async (accs) => {
-                currentAccount = accs && accs.length ? accs[0] : null;
+                currentAccount = accs && accs.length ? accs[0]?.toLowerCase() : null;  // Normalize to lowercase
                 updateWalletUI();
                 
                 // Load balance when account changes
@@ -1969,7 +2463,7 @@ async function loadUserBalance() {
             
             // Show welcome message for new users
             if (data.is_new_user) {
-                showMessage(`Welcome! You've been credited with ${formatNumberWithCommas(userBalance, 2)} USDC to start trading!`, 'success', 'tradingMessage');
+                showMessage(`Welcome! You've been credited with ${formatNumberWithCommas(userBalance, 2)} EURC to start trading!`, 'success', 'tradingMessage');
             }
         }
     } catch (e) {
@@ -2025,7 +2519,7 @@ function updateBalanceDisplay() {
     // Update balance in trading UI
     const balanceElements = document.querySelectorAll('.user-balance, #userBalance');
     balanceElements.forEach(el => {
-        el.textContent = `${formatNumberWithCommas(userBalance, 2)} USDC`;
+        el.textContent = `${formatNumberWithCommas(userBalance, 2)} EURC`;
     });
     
     // Update balance in navbar - show when wallet is connected
@@ -2033,7 +2527,7 @@ function updateBalanceDisplay() {
     if (balanceDisplay) {
         if (currentAccount) {
             balanceDisplay.innerHTML = `
-                <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+                <span>${formatNumberWithCommas(userBalance, 2)} EURC</span>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
                     <path d="M3 4.5L6 7.5L9 4.5"/>
                 </svg>
@@ -2049,7 +2543,7 @@ function updateBalanceDisplay() {
     const profileBalance = document.getElementById('profileBalance');
     if (profileBalance) {
         profileBalance.innerHTML = `
-            <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+            <span>${formatNumberWithCommas(userBalance, 2)} EURC</span>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
                 <path d="M3 4.5L6 7.5L9 4.5"/>
             </svg>
@@ -2060,7 +2554,7 @@ function updateBalanceDisplay() {
     // Update balance in market detail page trading card
     const balanceSmall = document.querySelector('small.text-muted');
     if (balanceSmall && balanceSmall.textContent.includes('Balance:')) {
-        balanceSmall.innerHTML = `Balance: <span id="userBalance">${formatNumberWithCommas(userBalance, 2)} USDC</span>`;
+        balanceSmall.innerHTML = `Balance: <span id="userBalance">${formatNumberWithCommas(userBalance, 2)} EURC</span>`;
     }
 }
 
@@ -2272,7 +2766,7 @@ function updateProfileDisplay() {
         if (profileWallet) profileWallet.textContent = 'Not connected';
         if (profileBalance) {
             profileBalance.innerHTML = `
-                <span>0.00 USDC</span>
+                <span>0.00 EURC</span>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
                     <path d="M3 4.5L6 7.5L9 4.5"/>
                 </svg>
@@ -2285,7 +2779,7 @@ function updateProfileDisplay() {
         }
         if (profileBalance) {
             profileBalance.innerHTML = `
-                <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+                <span>${formatNumberWithCommas(userBalance, 2)} EURC</span>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
                     <path d="M3 4.5L6 7.5L9 4.5"/>
                 </svg>
@@ -2323,7 +2817,7 @@ async function loadKYCStatus() {
     if (!currentAccount) {
         // Update profile display for disconnected state
         if (profileWallet) profileWallet.textContent = 'Not connected';
-        if (profileBalance) profileBalance.textContent = '0.00 USDC';
+        if (profileBalance) profileBalance.textContent = '0.00 EURC';
         if (profileKYCStatus) profileKYCStatus.innerHTML = '<span class="badge bg-secondary">Not Submitted</span>';
         // Keep KYC section visible even when not connected
         return;
@@ -2336,7 +2830,7 @@ async function loadKYCStatus() {
         }
         if (profileBalance) {
             profileBalance.innerHTML = `
-                <span>${formatNumberWithCommas(userBalance, 2)} USDC</span>
+                <span>${formatNumberWithCommas(userBalance, 2)} EURC</span>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6;">
                     <path d="M3 4.5L6 7.5L9 4.5"/>
                 </svg>
@@ -2421,8 +2915,10 @@ function handleKYCFileSelect(event) {
     // Show preview
     const reader = new FileReader();
     reader.onload = function(e) {
-        document.getElementById('kycPreviewImg').src = e.target.result;
-        document.getElementById('kycImagePreview').style.display = 'block';
+        const previewImg = document.getElementById('kycPreviewImg');
+        const imagePreview = document.getElementById('kycImagePreview');
+        if (previewImg) previewImg.src = e.target.result;
+        if (imagePreview) imagePreview.style.display = 'block';
     };
     reader.readAsDataURL(file);
 }
@@ -2493,7 +2989,7 @@ async function uploadKYCDocument() {
             const rewardAmount = userBalance - oldBalance;
             
             if (rewardAmount > 0) {
-                alert(`✅ Identity verified successfully!\n\n🎉 Surprise! You've received ${formatNumberWithCommas(rewardAmount, 2)} USDC as a verification bonus!`);
+                alert(`✅ Identity verified successfully!\n\n🎉 Surprise! You've received ${formatNumberWithCommas(rewardAmount, 2)} EURC as a verification bonus!`);
             } else {
                 alert('✅ Identity verified successfully!');
             }
@@ -2544,15 +3040,25 @@ async function uploadKYCDocument() {
 
 function cancelKYCUpload() {
     // Reset file input and hide preview
-    document.getElementById('kycFileInput').value = '';
-    document.getElementById('kycImagePreview').style.display = 'none';
+    const fileInput = document.getElementById('kycFileInput');
+    const imagePreview = document.getElementById('kycImagePreview');
+    if (fileInput) fileInput.value = '';
+    if (imagePreview) imagePreview.style.display = 'none';
 }
 
 function resetKYCUpload() {
     // Reset to upload form
-    document.getElementById('kycRejected').style.display = 'none';
-    document.getElementById('kycNotVerified').style.display = 'block';
-    document.getElementById('kycFileInput').value = '';
+    const kycRejected = document.getElementById('kycRejected');
+    const kycNotVerified = document.getElementById('kycNotVerified');
+    const fileInput = document.getElementById('kycFileInput');
+    const imagePreview = document.getElementById('kycImagePreview');
+    const previewImg = document.getElementById('kycPreviewImg');
+    
+    if (kycRejected) kycRejected.style.display = 'none';
+    if (kycNotVerified) kycNotVerified.style.display = 'block';
+    if (fileInput) fileInput.value = '';
+    if (imagePreview) imagePreview.style.display = 'none';
+    if (previewImg) previewImg.src = '';
 }
 
 function convertImageToBase64(file) {

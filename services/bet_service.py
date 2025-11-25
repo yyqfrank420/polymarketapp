@@ -81,7 +81,7 @@ def bet_worker():
                         with bet_results_lock:
                             bet_results[request_id] = {
                                 'success': False,
-                                'message': f'Insufficient balance. You have ${user_balance:.2f}, need ${amount:.2f}',
+                                'message': f'Insufficient balance. You have €{user_balance:.2f}, need €{amount:.2f}',
                                 'timestamp': time.time()
                             }
                         bet_queue.task_done()
@@ -106,16 +106,22 @@ def bet_worker():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (market_id, wallet, side, amount, shares, price_per_share, tx_hash, signature))
                     
+                    bet_id = cursor.lastrowid
+                    
                     # Deduct balance
                     new_balance = update_user_balance(wallet, amount, 'deduct')
                     
-                    logger.info(f'Bet placed: market {market_id}, {side} ${amount:.2f} ({shares:.2f} shares @ ${price_per_share:.4f}) by {wallet}. New balance: ${new_balance:.2f}')
+                    logger.info(f'Bet placed: market {market_id}, {side} €{amount:.2f} ({shares:.2f} shares @ €{price_per_share:.4f}) by {wallet}. New balance: €{new_balance:.2f}')
                     
                     with bet_results_lock:
                         bet_results[request_id] = {
                             'success': True,
+                            'bet_id': bet_id,
                             'shares': shares,
                             'price_per_share': price_per_share,
+                            'amount': amount,
+                            'side': side,
+                            'market_id': market_id,
                             'timestamp': time.time()
                         }
                     
@@ -140,8 +146,10 @@ bet_worker_thread = threading.Thread(target=bet_worker, daemon=True)
 bet_worker_thread.start()
 
 def queue_bet(market_id, wallet, side, amount, tx_hash=None, signature=None):
-    """Queue a bet for processing"""
+    """Queue a bet for processing. Returns (request_id, queue_position)"""
     request_id = str(uuid.uuid4())
+    # Check queue size BEFORE adding (this is the position in queue)
+    queue_position = bet_queue.qsize()
     bet_queue.put({
         'request_id': request_id,
         'market_id': market_id,
@@ -151,10 +159,81 @@ def queue_bet(market_id, wallet, side, amount, tx_hash=None, signature=None):
         'tx_hash': tx_hash,
         'signature': signature
     })
-    return request_id
+    return request_id, queue_position
 
 def get_bet_result(request_id):
     """Get bet result by request_id"""
     with bet_results_lock:
         return bet_results.pop(request_id, None)  # Remove after fetching
+
+def undo_bet(bet_id, wallet):
+    """
+    Undo/cancel a bet - refund user and reverse market state
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'message': str,
+            'refunded_amount': float,
+            'new_balance': float
+        } or None if bet not found/unauthorized
+    """
+    from services.user_service import update_user_balance
+    from services.market_service import get_market_state, update_market_state
+    
+    try:
+        with db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # Get bet details
+            wallet = wallet.lower() if wallet else wallet
+            cursor.execute('''
+                SELECT market_id, wallet, side, amount, shares, price_per_share
+                FROM bets WHERE id=? AND LOWER(wallet)=?
+            ''', (bet_id, wallet))
+            bet = cursor.fetchone()
+            
+            if not bet:
+                return None  # Bet not found or unauthorized
+            
+            # Check if market is still open
+            cursor.execute('SELECT status FROM markets WHERE id=?', (bet['market_id'],))
+            market = cursor.fetchone()
+            if not market or market['status'] != 'open':
+                return {
+                    'success': False,
+                    'message': 'Cannot undo bet - market is not open'
+                }
+            
+            # Reverse market state (enforce buffer minimum)
+            from config import Config
+            q_yes, q_no = get_market_state(bet['market_id'])
+            if bet['side'] == 'YES':
+                new_q_yes = max(Config.LMSR_BUFFER, q_yes - bet['shares'])
+                update_market_state(bet['market_id'], new_q_yes, q_no)
+            else:  # NO
+                new_q_no = max(Config.LMSR_BUFFER, q_no - bet['shares'])
+                update_market_state(bet['market_id'], q_yes, new_q_no)
+            
+            # Refund user
+            new_balance = update_user_balance(wallet, bet['amount'], 'add')
+            
+            # Delete bet
+            cursor.execute('DELETE FROM bets WHERE id=?', (bet_id,))
+            
+            logger.info(f'Bet {bet_id} undone: refunded {bet["amount"]:.2f} to {wallet}')
+            
+            return {
+                'success': True,
+                'message': f'Bet undone. Refunded {bet["amount"]:.2f} EURC',
+                'refunded_amount': bet['amount'],
+                'new_balance': new_balance
+            }
+            
+    except Exception as e:
+        logger.error(f'Undo bet error: {str(e)}')
+        return {
+            'success': False,
+            'message': f'Failed to undo bet: {str(e)}'
+        }
 

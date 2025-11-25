@@ -213,6 +213,7 @@ class KYCMicroservice:
     "document_type": "passport" | "drivers_license" | "national_id" | "other" | "none",
     "full_name": "Full legal name as shown",
     "date_of_birth": "YYYY-MM-DD format",
+    "expiry_date": "YYYY-MM-DD format or empty string if not found/not applicable",
     "document_number": "Exact number/ID shown",
     "nationality": "Country name",
     "confidence": "high" | "medium" | "low",
@@ -228,7 +229,8 @@ class KYCMicroservice:
 - Blurry or low-quality images → confidence: low
 - Screenshots of documents → is_official_document: false
 - Photocopies/scans → is_official_document: false
-- Expired documents → still official, note in verification_notes
+- Expired documents → still official, extract expiry_date, note expiration status in verification_notes
+- Documents without expiry date (some national IDs) → expiry_date: empty string
 - Foreign language documents → extract as shown, provide nationality
 - Partial documents → is_official_document: false
 - Student IDs, work badges → is_official_document: false
@@ -304,8 +306,8 @@ class KYCMicroservice:
                 # Validate required fields
                 required_fields = [
                     "is_official_document", "document_type", "full_name",
-                    "date_of_birth", "document_number", "nationality",
-                    "confidence", "verification_notes"
+                    "date_of_birth", "expiry_date", "document_number", 
+                    "nationality", "confidence", "verification_notes"
                 ]
                 
                 for field in required_fields:
@@ -353,6 +355,7 @@ class KYCMicroservice:
             "document_type": "none",
             "full_name": "",
             "date_of_birth": "",
+            "expiry_date": "",
             "document_number": "",
             "nationality": "",
             "confidence": "low",

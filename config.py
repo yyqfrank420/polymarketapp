@@ -25,7 +25,9 @@ class Config:
     TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY')
     
     # LMSR Configuration
-    LMSR_B = 100.0  # Liquidity parameter
+    # LMSR_B should be proportional to total liquidity to prevent excessive price swings
+    # With buffer of 10000 on each side, b should be ~5000-10000 for reasonable liquidity
+    LMSR_B = 5000.0  # Liquidity parameter (increased from 100 to prevent 99/1 swings on 2000 EURC bets)
     LMSR_BUFFER = 10000.0  # Initial buffer ($10k on each side to prevent early swings)
     
     # User Balance
@@ -43,7 +45,7 @@ class Config:
     CHATBOT_MAX_MESSAGE_LENGTH = 1000  # Maximum characters in a message
     
     # KYC Configuration
-    KYC_REWARD_AMOUNT = 20.0  # USDC reward for verification
+    KYC_REWARD_AMOUNT = 20.0  # EURC reward for verification
     KYC_MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB max image size
     KYC_RATE_LIMIT = "5 per hour"  # Per wallet address
     

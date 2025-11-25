@@ -28,3 +28,13 @@ def profile_page():
     """Render the user profile and KYC verification page"""
     return render_template('profile.html')
 
+@pages_bp.route('/gdpr')
+def gdpr_page():
+    """Render GDPR compliance page"""
+    return render_template('gdpr.html')
+
+@pages_bp.route('/compliance')
+def compliance_page():
+    """Render compliance and regulatory information page"""
+    return render_template('compliance.html')
+

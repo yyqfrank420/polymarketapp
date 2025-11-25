@@ -46,7 +46,7 @@ def standard_error_response(message, status_code=400):
 
 def standard_success_response(data=None, message=None, status_code=200):
     """Standardized success response format"""
-    response = {}
+    response = {'success': True}
     if data:
         response.update(data)
     if message:

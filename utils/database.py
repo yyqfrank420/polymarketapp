@@ -8,10 +8,14 @@ from config import Config
 _local = threading.local()
 
 def get_db():
-    """Get database connection (thread-safe)"""
+    """Get database connection (thread-safe, optimized for concurrency)"""
     if not hasattr(_local, 'conn'):
-        _local.conn = sqlite3.connect(Config.DATABASE_PATH)
+        _local.conn = sqlite3.connect(Config.DATABASE_PATH, timeout=30.0)  # 30 second timeout
         _local.conn.row_factory = sqlite3.Row
+        # Enable WAL mode for better concurrent access (30 users)
+        _local.conn.execute('PRAGMA journal_mode=WAL')
+        _local.conn.execute('PRAGMA busy_timeout=30000')  # 30 second busy timeout
+        _local.conn.execute('PRAGMA synchronous=NORMAL')  # Faster writes, still safe
     return _local.conn
 
 @contextmanager
@@ -36,8 +40,12 @@ def close_db():
 
 def init_db():
     """Initialize database schema"""
-    conn = sqlite3.connect(Config.DATABASE_PATH)
+    conn = sqlite3.connect(Config.DATABASE_PATH, timeout=30.0)
     cursor = conn.cursor()
+    
+    # Enable WAL mode for better concurrent access
+    cursor.execute('PRAGMA journal_mode=WAL')
+    cursor.execute('PRAGMA busy_timeout=30000')
     
     try:
         # Registrations table
@@ -126,6 +134,7 @@ def init_db():
                 status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','verified','rejected')),
                 full_name TEXT,
                 date_of_birth TEXT,
+                expiry_date TEXT,
                 document_number TEXT,
                 nationality TEXT,
                 document_type TEXT,
@@ -137,6 +146,12 @@ def init_db():
                 FOREIGN KEY(wallet) REFERENCES users(wallet)
             )
         ''')
+        
+        # Add expiry_date column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE kyc_verifications ADD COLUMN expiry_date TEXT')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         conn.commit()
     finally:

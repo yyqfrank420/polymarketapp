@@ -8,10 +8,11 @@ _balance_lock = threading.Lock()
 
 def get_user_balance(wallet):
     """Get user balance, create user if doesn't exist (atomic operation)"""
+    wallet = wallet.lower() if wallet else wallet  # Normalize wallet address
     with _balance_lock:
         with db_transaction() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT balance FROM users WHERE wallet=?', (wallet,))
+            cursor.execute('SELECT balance FROM users WHERE LOWER(wallet)=?', (wallet,))
             row = cursor.fetchone()
             
             if not row:
@@ -26,12 +27,13 @@ def get_user_balance(wallet):
 
 def update_user_balance(wallet, amount, operation='deduct'):
     """Update user balance atomically (deduct or add)"""
+    wallet = wallet.lower() if wallet else wallet  # Normalize wallet address
     with _balance_lock:
         with db_transaction() as conn:
             cursor = conn.cursor()
             
             # Get current balance in same transaction
-            cursor.execute('SELECT balance FROM users WHERE wallet=?', (wallet,))
+            cursor.execute('SELECT balance FROM users WHERE LOWER(wallet)=?', (wallet,))
             row = cursor.fetchone()
             current_balance = row['balance'] if row else 0.0
             
@@ -52,10 +54,11 @@ def update_user_balance(wallet, amount, operation='deduct'):
 
 def check_user_exists(wallet):
     """Check if user exists"""
+    wallet = wallet.lower() if wallet else wallet  # Normalize wallet address
     conn = get_db()
     try:
         cursor = conn.cursor()
-        cursor.execute('SELECT wallet FROM users WHERE wallet=?', (wallet,))
+        cursor.execute('SELECT wallet FROM users WHERE LOWER(wallet)=?', (wallet,))
         return cursor.fetchone() is not None
     finally:
         pass  # Connection managed by Flask

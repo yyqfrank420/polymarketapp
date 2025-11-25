@@ -1,4 +1,4 @@
-"""Chatbot function implementations - called by chatbot service"""
+"""Chatbot tool call implementations - called by chatbot service"""
 import logging
 import threading
 from utils.database import get_db, _row_to_dict
@@ -126,14 +126,14 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
             if not validate_side(side):
                 return {"error": "Side must be YES or NO"}
             if not validate_amount(amount):
-                return {"error": "Amount must be positive and less than $1,000,000"}
+                return {"error": "Amount must be positive and less than €1,000,000"}
             
             # Queue bet
             request_id = queue_bet(market_id, wallet, side, amount)
             
             return {
                 "success": True,
-                "message": f"Bet queued: ${float(amount):.2f} on {side}",
+                "message": f"Trade queued: €{float(amount):.2f} on {side}",
                 "request_id": request_id,
                 "status": "processing"
             }
@@ -151,7 +151,7 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                            m.question, m.status, m.resolution
                     FROM bets b
                     JOIN markets m ON b.market_id = m.id
-                    WHERE b.wallet = ?
+                    WHERE LOWER(b.wallet) = LOWER(?)
                     ORDER BY b.created_at DESC
                 ''', (wallet,))
                 

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GDPR Policy - Futura</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-mode has-responsible-footer">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold" href="/">
+                <span class="brand-icon">📊</span> Futura
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Markets</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/resolved">Resolved</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/my-bets">Portfolio</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/profile">Profile</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <button id="connectWalletBtn" class="btn btn-wallet">
+                        <span class="wallet-icon">🔗</span> Connect Wallet
+                    </button>
+                    <div id="walletConnectedGroup" style="display: none;" class="d-flex align-items-center gap-2">
+                        <div id="userBalanceDisplay" class="wallet-balance">0 EURC</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <section class="hero-section-dark">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <h1 class="hero-title-dark">GDPR & Data Rights</h1>
+                    <p class="hero-subtitle-dark">All personal data processed under EU GDPR. Data stored in EU servers.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="markets-section">
+        <div class="container">
+            <div class="compliance-card mb-4">
+                <h3>Data Access Requests</h3>
+                <p class="text-muted">Request a copy of all personal data associated with your wallet.</p>
+                <a class="btn btn-outline-light btn-sm" href="mailto:privacy@futura.com?subject=GDPR%20Data%20Access%20Request">Request Data Access</a>
+            </div>
+            <div class="compliance-card mb-4">
+                <h3>Data Deletion Requests</h3>
+                <p class="text-muted">Request deletion of your personal data and account information.</p>
+                <a class="btn btn-outline-light btn-sm" href="mailto:privacy@futura.com?subject=GDPR%20Data%20Deletion%20Request">Request Data Deletion</a>
+            </div>
+            <div class="compliance-card mb-4" id="cookies">
+                <h3>Cookie & Privacy Practices</h3>
+                <p class="text-muted">We use cookies for secure login, analytics, and regulatory compliance monitoring. Cookies are minimized and never sold to third parties.</p>
+            </div>
+            <div class="compliance-card">
+                <h3>EU Data Storage</h3>
+                <p class="text-muted">All systems operate on EU-hosted infrastructure with encryption in transit and at rest. Requests are answered within the statutory timeframes.</p>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Age Gate Modal -->
+    <div id="AgeJurisdictionGate" class="age-gate-modal" aria-hidden="false" role="dialog" aria-labelledby="ageGateTitle">
+        <div class="age-gate-card">
+            <h2 id="ageGateTitle">Age and Jurisdiction Confirmation</h2>
+            <p class="age-gate-description">Please confirm you meet the legal requirements to trade on this platform.</p>
+            <form id="ageGateForm" novalidate>
+                <label class="age-gate-checkbox">
+                    <input type="checkbox" required>
+                    <span>I am a legal adult aged 18 or above.</span>
+                </label>
+                <label class="age-gate-checkbox">
+                    <input type="checkbox" required>
+                    <span>I am accessing this platform from Ireland or another permitted jurisdiction.</span>
+                </label>
+                <label class="age-gate-checkbox age-gate-checkbox-small">
+                    <input type="checkbox" required>
+                    <span>I understand this platform offers real-money event trading products which may be classified as gambling and/or financial derivatives under Irish and EU law.</span>
+                </label>
+                <div class="age-gate-error" id="ageGateError" role="alert"></div>
+                <button type="submit" class="btn btn-primary w-100">Continue</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="cookieConsentBanner" class="cookie-consent-banner cookie-consent-hidden" role="dialog" aria-live="polite">
+        <p class="cookie-consent-text">This site uses cookies for secure login, analytics, and regulatory compliance. By continuing, you consent to processing under GDPR.</p>
+        <div class="cookie-consent-actions">
+            <button type="button" class="btn btn-primary" id="cookieAcceptBtn">Accept</button>
+            <button type="button" class="btn btn-manage" id="cookieManageBtn">Manage Cookies</button>
+        </div>
+    </div>
+    
+    <div class="ie-responsible-footer" role="contentinfo">
+        <div class="ie-responsible-footer__col">
+            <span class="ie-age-badge">18+</span>
+            <span>Play responsibly. For support visit <a href="https://www.gamblingcare.ie" target="_blank" rel="noreferrer">GamblingCare.ie</a> or call 1800 936 725.</span>
+        </div>
+        <div class="ie-responsible-footer__links">
+            <a href="/compliance">Compliance</a>
+            <a href="/gdpr">GDPR Policy</a>
+            <a href="/cookies">Cookies</a>
+        </div>
+    </div>
+    
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Ethers.js for MetaMask integration -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+

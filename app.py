@@ -31,6 +31,9 @@ app = Flask(__name__)
 app.config['ENV'] = Config.FLASK_ENV
 app.config['DEBUG'] = Config.DEBUG
 app.config['SECRET_KEY'] = Config.SECRET_KEY or 'dev-secret-key-change-in-production'
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # CORS for cross-origin requests (optional)
 if CORS_AVAILABLE:

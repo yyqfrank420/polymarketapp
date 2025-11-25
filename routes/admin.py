@@ -1,32 +1,105 @@
 """Admin routes"""
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
+from functools import wraps
 import logging
+import time
 from utils.database import get_db, db_transaction, _row_to_dict
 from utils.validators import standard_error_response, standard_success_response
 from services.user_service import get_user_balance, update_user_balance
 from services.market_service import calculate_market_price
+from utils.cache import get_cache
 from config import Config
 
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
 
+# Admin password (in production, use environment variable)
+ADMIN_PASSWORD = "password"
+ADMIN_SESSION_TTL = 600  # 10 minutes
+
+def check_admin_auth():
+    """Check if admin is authenticated with valid TTL"""
+    if 'admin_authenticated' not in session:
+        return False
+    if 'admin_auth_time' not in session:
+        return False
+    # Check TTL (10 minutes)
+    if time.time() - session['admin_auth_time'] > ADMIN_SESSION_TTL:
+        session.pop('admin_authenticated', None)
+        session.pop('admin_auth_time', None)
+        return False
+    return True
+
+def admin_required(f):
+    """Decorator to require admin authentication for page routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not check_admin_auth():
+            return redirect(url_for('admin.admin_login_page'))
+        # Refresh TTL on each request
+        session['admin_auth_time'] = time.time()
+        return f(*args, **kwargs)
+    return decorated_function
+
+def api_admin_required(f):
+    """Decorator to require admin authentication for API routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not check_admin_auth():
+            return jsonify({'error': 'Admin authentication required', 'auth_required': True}), 401
+        # Refresh TTL on each request
+        session['admin_auth_time'] = time.time()
+        return f(*args, **kwargs)
+    return decorated_function
+
+@admin_bp.route('/admin/login')
+def admin_login_page():
+    """Render admin login page"""
+    if check_admin_auth():
+        return redirect(url_for('admin.admin_page'))
+    return render_template('admin_login.html')
+
+@admin_bp.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    """Authenticate admin"""
+    data = request.get_json() or {}
+    password = data.get('password', '')
+    
+    if password == ADMIN_PASSWORD:
+        session['admin_authenticated'] = True
+        session['admin_auth_time'] = time.time()
+        return jsonify({'success': True, 'message': 'Authenticated'}), 200
+    else:
+        return jsonify({'success': False, 'error': 'Invalid password'}), 401
+
+@admin_bp.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    """Logout admin"""
+    session.pop('admin_authenticated', None)
+    session.pop('admin_auth_time', None)
+    return jsonify({'success': True, 'message': 'Logged out'}), 200
+
 @admin_bp.route('/admin')
+@admin_required
 def admin_page():
     """Render the admin dashboard"""
     return render_template('admin.html')
 
 @admin_bp.route('/admin/create-market')
+@admin_required
 def admin_create_market_page():
     """Render the admin market creation page"""
     return render_template('admin_create_market.html')
 
 @admin_bp.route('/admin/resolve')
+@admin_required
 def admin_resolve_page():
     """Render the admin resolution page"""
     return render_template('admin_resolve.html')
 
 @admin_bp.route('/api/markets/<int:market_id>/resolve', methods=['POST'])
+@api_admin_required
 def resolve_market(market_id):
     """Resolve a market and automatically distribute payouts"""
     try:
@@ -89,9 +162,9 @@ def resolve_market(market_id):
                     total_payout += final_payout
                     total_fees_collected += fee
                     
-                    logger.info(f'💰 Payout: {wallet[:10]}... | Gross: {gross_payout:.2f} USDC | Fee: {fee:.2f} USDC (2%) | Net: {final_payout:.2f} USDC | Balance: {new_balance:.2f} USDC')
+                    logger.info(f'Payout: {wallet[:10]}... | Gross: {gross_payout:.2f} EURC | Fee: {fee:.2f} EURC (2%) | Net: {final_payout:.2f} EURC | Balance: {new_balance:.2f} EURC')
             
-            logger.info(f'✅ Market {market_id} resolved as {outcome}. Distributed {total_payout:.2f} USDC to {len(payouts_distributed)} winner(s) ({winners_count} winning bets). Fees collected: {total_fees_collected:.2f} USDC (2%)')
+            logger.info(f'Market {market_id} resolved as {outcome}. Distributed {total_payout:.2f} EURC to {len(payouts_distributed)} winner(s) ({winners_count} winning bets). Fees collected: {total_fees_collected:.2f} EURC (2%)')
             
             return standard_success_response({
                 'outcome': outcome,
@@ -115,6 +188,7 @@ def resolve_market(market_id):
         return standard_error_response('Failed to resolve market', 500)
 
 @admin_bp.route('/api/markets/<int:market_id>/payouts', methods=['GET'])
+@api_admin_required
 def get_market_payouts(market_id):
     """Calculate payouts for resolved market"""
     try:
@@ -183,7 +257,7 @@ def get_market_payouts(market_id):
                 wallet_data['profit'] = wallet_data['payout'] - wallet_data['total_bet']
                 if wallet_data['payout'] > 0:
                     update_user_balance(wallet_data['wallet'], wallet_data['payout'], 'add')
-                    logger.info(f'Credited {wallet_data["wallet"]} with {wallet_data["payout"]:.2f} USDC payout')
+                    logger.info(f'Credited {wallet_data["wallet"]} with {wallet_data["payout"]:.2f} EURC payout')
             
             return jsonify({
                 'market_id': market_id,
@@ -199,6 +273,7 @@ def get_market_payouts(market_id):
         return standard_error_response('Failed to calculate payouts', 500)
 
 @admin_bp.route('/api/user/<wallet>/credit', methods=['POST'])
+@api_admin_required
 def credit_user(wallet):
     """Manually credit user (admin/testing)"""
     try:
@@ -215,20 +290,21 @@ def credit_user(wallet):
         get_user_balance(wallet)  # Ensure user exists
         new_balance = update_user_balance(wallet, amount, 'add')
         
-        logger.info(f'💰 Admin credited {wallet} with {amount:.2f} USDC. New balance: {new_balance:.2f} USDC')
+        logger.info(f'Admin credited {wallet} with {amount:.2f} EURC. New balance: {new_balance:.2f} EURC')
         
         return jsonify({
             'success': True,
             'wallet': wallet,
             'amount': round(amount, 2),
             'new_balance': round(new_balance, 2),
-            'message': f'Successfully credited {amount:.2f} USDC to {wallet[:10]}...'
+            'message': f'Successfully credited {amount:.2f} EURC to {wallet[:10]}...'
         }), 200
     except Exception as e:
         logger.error(f'Credit user error: {str(e)}')
         return standard_error_response('Failed to credit user', 500)
 
 @admin_bp.route('/api/admin/users', methods=['GET'])
+@api_admin_required
 def get_all_users():
     """Get all users with their stats"""
     try:
@@ -275,7 +351,133 @@ def get_all_users():
         logger.error(f'Get all users error: {str(e)}')
         return standard_error_response('Failed to get users', 500)
 
+@admin_bp.route('/api/admin/kyc', methods=['GET'])
+@api_admin_required
+def get_all_kyc():
+    """Get all KYC verifications"""
+    try:
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            
+            # Get all KYC verifications with user info
+            cursor.execute('''
+                SELECT 
+                    k.wallet,
+                    k.status,
+                    k.full_name,
+                    k.date_of_birth,
+                    k.expiry_date,
+                    k.document_number,
+                    k.nationality,
+                    k.document_type,
+                    k.is_official_document,
+                    k.verification_notes,
+                    k.verified_at,
+                    k.created_at,
+                    k.updated_at,
+                    u.balance,
+                    u.created_at as user_created_at
+                FROM kyc_verifications k
+                LEFT JOIN users u ON k.wallet = u.wallet
+                ORDER BY k.created_at DESC
+            ''')
+            
+            verifications = []
+            for row in cursor.fetchall():
+                kyc_data = dict(_row_to_dict(row))
+                verifications.append({
+                    'wallet': kyc_data['wallet'],
+                    'status': kyc_data['status'] or 'pending',
+                    'full_name': kyc_data.get('full_name'),
+                    'date_of_birth': kyc_data.get('date_of_birth'),
+                    'expiry_date': kyc_data.get('expiry_date'),
+                    'document_number': kyc_data.get('document_number'),
+                    'nationality': kyc_data.get('nationality'),
+                    'document_type': kyc_data.get('document_type'),
+                    'is_official_document': bool(kyc_data.get('is_official_document')),
+                    'verification_notes': kyc_data.get('verification_notes'),
+                    'verified_at': kyc_data.get('verified_at'),
+                    'created_at': kyc_data.get('created_at'),
+                    'updated_at': kyc_data.get('updated_at'),
+                    'user_balance': round(kyc_data.get('balance') or 0.0, 2),
+                    'user_created_at': kyc_data.get('user_created_at')
+                })
+            
+            return jsonify({'verifications': verifications}), 200
+        finally:
+            pass
+    except Exception as e:
+        logger.error(f'Get all KYC error: {str(e)}')
+        return standard_error_response('Failed to get KYC verifications', 500)
+
+@admin_bp.route('/api/admin/kyc/<wallet>/delete', methods=['DELETE'])
+@api_admin_required
+def delete_kyc_verification(wallet):
+    """Delete a KYC verification"""
+    try:
+        wallet = wallet.strip()
+        if not wallet or not wallet.startswith('0x'):
+            return standard_error_response('Invalid wallet address', 400)
+        
+        with db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # Check if KYC exists (case-insensitive)
+            wallet = wallet.lower()
+            cursor.execute('SELECT wallet FROM kyc_verifications WHERE LOWER(wallet)=?', (wallet,))
+            if not cursor.fetchone():
+                return standard_error_response('KYC verification not found', 404)
+            
+            # Delete KYC verification
+            cursor.execute('DELETE FROM kyc_verifications WHERE LOWER(wallet)=?', (wallet,))
+            
+            # Reset user auth_status to unverified
+            cursor.execute('UPDATE users SET auth_status="unverified" WHERE LOWER(wallet)=?', (wallet,))
+            
+            logger.info(f'Deleted KYC verification for {wallet[:10]}...')
+        
+        return jsonify({
+            'success': True,
+            'message': f'KYC verification deleted successfully for {wallet[:10]}...'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f'Delete KYC verification error: {str(e)}', exc_info=True)
+        return standard_error_response(f'Failed to delete KYC verification: {str(e)}', 500)
+
+@admin_bp.route('/api/admin/kyc/clear', methods=['DELETE'])
+@api_admin_required
+def clear_all_kyc():
+    """Clear all KYC verifications"""
+    try:
+        with db_transaction() as conn:
+            cursor = conn.cursor()
+            
+            # Get count before deletion
+            cursor.execute('SELECT COUNT(*) as count FROM kyc_verifications')
+            count = cursor.fetchone()['count']
+            
+            # Delete all KYC verifications
+            cursor.execute('DELETE FROM kyc_verifications')
+            
+            # Reset all user auth_status to unverified
+            cursor.execute('UPDATE users SET auth_status="unverified"')
+            
+            logger.info(f'Cleared all KYC verifications ({count} records)')
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully cleared {count} KYC verification(s)',
+            'deleted_count': count
+        }), 200
+        
+    except Exception as e:
+        logger.error(f'Clear all KYC error: {str(e)}', exc_info=True)
+        return standard_error_response(f'Failed to clear KYC verifications: {str(e)}', 500)
+
 @admin_bp.route('/api/admin/users/<wallet>/delete', methods=['DELETE'])
+@api_admin_required
 def delete_user(wallet):
     """Delete a user and automatically sell their open positions"""
     try:
@@ -287,11 +489,12 @@ def delete_user(wallet):
             cursor = conn.cursor()
             
             # Get all open positions (bets with shares > 0 in open markets)
+            wallet = wallet.lower()
             cursor.execute('''
                 SELECT b.id, b.market_id, b.side, b.shares, b.amount
                 FROM bets b
                 JOIN markets m ON b.market_id = m.id
-                WHERE b.wallet = ? AND m.status = 'open' AND b.shares > 0
+                WHERE LOWER(b.wallet) = ? AND m.status = 'open' AND b.shares > 0
             ''', (wallet,))
             
             open_positions = cursor.fetchall()
@@ -311,21 +514,26 @@ def delete_user(wallet):
                     # Calculate sell value
                     sell_value = shares * current_price
                     
-                    # Update market state: decrease q_yes or q_no
+                    # Update market state: decrease q_yes or q_no (but never below buffer)
+                    from config import Config
                     cursor.execute('SELECT q_yes, q_no FROM market_state WHERE market_id=?', (market_id,))
                     state_row = cursor.fetchone()
                     if state_row:
-                        q_yes = state_row['q_yes'] or 0
-                        q_no = state_row['q_no'] or 0
+                        q_yes = state_row['q_yes'] if state_row['q_yes'] is not None and state_row['q_yes'] >= Config.LMSR_BUFFER else Config.LMSR_BUFFER
+                        q_no = state_row['q_no'] if state_row['q_no'] is not None and state_row['q_no'] >= Config.LMSR_BUFFER else Config.LMSR_BUFFER
                         
                         if side == 'YES':
-                            new_q_yes = max(0, q_yes - shares)
+                            new_q_yes = max(Config.LMSR_BUFFER, q_yes - shares)  # Never below buffer
                             cursor.execute('UPDATE market_state SET q_yes=?, q_no=? WHERE market_id=?', 
                                          (new_q_yes, q_no, market_id))
                         else:  # NO
-                            new_q_no = max(0, q_no - shares)
+                            new_q_no = max(Config.LMSR_BUFFER, q_no - shares)  # Never below buffer
                             cursor.execute('UPDATE market_state SET q_yes=?, q_no=? WHERE market_id=?', 
                                          (q_yes, new_q_no, market_id))
+                    else:
+                        # Initialize with buffer if doesn't exist
+                        cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, ?, ?)', 
+                                     (market_id, Config.LMSR_BUFFER, Config.LMSR_BUFFER))
                     
                     logger.info(f'Auto-sold {shares:.2f} {side} shares for user {wallet[:10]}... in market {market_id}')
                 except Exception as e:
@@ -333,11 +541,11 @@ def delete_user(wallet):
                     # Continue with other positions even if one fails
             
             # Delete all bets for this user
-            cursor.execute('DELETE FROM bets WHERE wallet=?', (wallet,))
+            cursor.execute('DELETE FROM bets WHERE LOWER(wallet)=?', (wallet,))
             bets_deleted = cursor.rowcount
             
             # Delete user record
-            cursor.execute('DELETE FROM users WHERE wallet=?', (wallet,))
+            cursor.execute('DELETE FROM users WHERE LOWER(wallet)=?', (wallet,))
             user_deleted = cursor.rowcount
             
             if user_deleted == 0:
@@ -357,6 +565,7 @@ def delete_user(wallet):
         return standard_error_response(f'Failed to delete user: {str(e)}', 500)
 
 @admin_bp.route('/api/activity/recent', methods=['GET'])
+@api_admin_required
 def get_recent_activity():
     """Get recent betting activity"""
     try:
@@ -403,6 +612,7 @@ def get_recent_activity():
         return jsonify({'activity': []}), 200
 
 @admin_bp.route('/api/markets/<int:market_id>/sell', methods=['POST'])
+@api_admin_required
 def sell_shares(market_id):
     """Sell shares back to market"""
     try:
@@ -416,12 +626,13 @@ def sell_shares(market_id):
 
         with db_transaction() as conn:
             cursor = conn.cursor()
+            wallet = wallet.lower()  # Normalize wallet address
             cursor.execute('''
                 SELECT b.id, b.market_id, b.side, b.shares, b.amount, b.price_per_share,
                        m.status
                 FROM bets b
                 JOIN markets m ON b.market_id = m.id
-                WHERE b.id = ? AND b.wallet = ? AND m.status = 'open'
+                WHERE b.id = ? AND LOWER(b.wallet) = ? AND m.status = 'open'
             ''', (bet_id, wallet))
             
             bet_row = cursor.fetchone()
@@ -452,26 +663,27 @@ def sell_shares(market_id):
             
             # Update market state: decrease q_yes or q_no when shares are sold back
             # Do this within the same transaction to avoid nested transaction issues
+            # Always enforce minimum buffer - never allow values below buffer
+            from config import Config
             cursor.execute('SELECT q_yes, q_no FROM market_state WHERE market_id=?', (market_id,))
             state_row = cursor.fetchone()
             if state_row:
-                q_yes = state_row['q_yes'] or 0
-                q_no = state_row['q_no'] or 0
+                q_yes = state_row['q_yes'] if state_row['q_yes'] is not None and state_row['q_yes'] >= Config.LMSR_BUFFER else Config.LMSR_BUFFER
+                q_no = state_row['q_no'] if state_row['q_no'] is not None and state_row['q_no'] >= Config.LMSR_BUFFER else Config.LMSR_BUFFER
             else:
                 # Initialize if doesn't exist (shouldn't happen, but safety check)
-                from config import Config
                 q_yes = Config.LMSR_BUFFER
                 q_no = Config.LMSR_BUFFER
                 cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, ?, ?)', 
                              (market_id, q_yes, q_no))
             
             if bet['side'] == 'YES':
-                new_q_yes = max(0, q_yes - shares_to_sell)  # Prevent negative
+                new_q_yes = max(Config.LMSR_BUFFER, q_yes - shares_to_sell)  # Never below buffer
                 cursor.execute('''
                     UPDATE market_state SET q_yes=?, q_no=? WHERE market_id=?
                 ''', (new_q_yes, q_no, market_id))
             else:  # NO
-                new_q_no = max(0, q_no - shares_to_sell)  # Prevent negative
+                new_q_no = max(Config.LMSR_BUFFER, q_no - shares_to_sell)  # Never below buffer
                 cursor.execute('''
                     UPDATE market_state SET q_yes=?, q_no=? WHERE market_id=?
                 ''', (q_yes, new_q_no, market_id))
@@ -493,4 +705,20 @@ def sell_shares(market_id):
     except Exception as e:
         logger.error(f'Sell shares error: {str(e)}', exc_info=True)
         return standard_error_response(f'Failed to sell shares: {str(e)}', 500)
+
+@admin_bp.route('/api/admin/cache/clear', methods=['POST'])
+@api_admin_required
+def clear_cache():
+    """Clear all server-side cache"""
+    try:
+        cache = get_cache()
+        cache.clear()
+        logger.info('Server cache cleared')
+        return jsonify({
+            'success': True,
+            'message': 'Server cache cleared successfully'
+        }), 200
+    except Exception as e:
+        logger.error(f'Clear cache error: {str(e)}')
+        return standard_error_response(f'Failed to clear cache: {str(e)}', 500)
 

@@ -8,9 +8,9 @@ from utils.validators import (
     validate_wallet_address, validate_amount, validate_side,
     standard_error_response, standard_success_response
 )
-from services.market_service import calculate_market_price, calculate_shares_lmsr
+from services.market_service import calculate_market_price, calculate_shares_lmsr, preview_trade
 from services.user_service import get_user_balance, update_user_balance
-from services.bet_service import queue_bet, get_bet_result
+from services.bet_service import queue_bet, get_bet_result, undo_bet as undo_bet_service
 from services.blockchain_service import get_blockchain_service
 # Import chatbot_service lazily to avoid premature singleton creation
 # from services.chatbot_service import get_chatbot_service  # Moved to function scope
@@ -85,7 +85,10 @@ def create_market():
             ''', (question, description, image_url, category, end_date, created_by))
             market_id = cursor.lastrowid
             
-            cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, 0.0, 0.0)', (market_id,))
+            # Initialize market state with LMSR buffer to prevent early price swings
+            from config import Config
+            cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, ?, ?)', 
+                         (market_id, Config.LMSR_BUFFER, Config.LMSR_BUFFER))
         
         logger.info(f'Created market {market_id}: {question} by {created_by}')
         return standard_success_response({'market_id': market_id}, status_code=201)
@@ -199,6 +202,31 @@ def get_market_price(market_id):
         logger.error(f'Get market price error: {str(e)}')
         return standard_error_response('Failed to get prices', 500)
 
+@api_bp.route('/markets/<int:market_id>/preview', methods=['GET'])
+def preview_trade_endpoint(market_id):
+    """Preview expected shares for a trade without executing it"""
+    try:
+        amount = request.args.get('amount', type=float)
+        side = request.args.get('side', '').strip().upper()
+        
+        if not validate_amount(amount):
+            return standard_error_response('Amount must be positive', 400)
+        if not validate_side(side):
+            return standard_error_response('Side must be YES or NO', 400)
+        
+        shares, price_per_share = preview_trade(market_id, amount, side)
+        
+        return jsonify({
+            'success': True,
+            'shares': round(shares, 2),
+            'price_per_share': round(price_per_share, 4)
+        }), 200
+    except ValueError as e:
+        return standard_error_response(str(e), 404)
+    except Exception as e:
+        logger.error(f'Preview trade error: {str(e)}')
+        return standard_error_response('Failed to preview trade', 500)
+
 # ========== BETTING API ==========
 @api_bp.route('/markets/<int:market_id>/bet', methods=['POST'])
 def place_bet(market_id):
@@ -234,15 +262,27 @@ def place_bet(market_id):
         finally:
             pass
 
-        # Queue bet
-        request_id = queue_bet(market_id, wallet, side, amount, tx_hash, signature)
+        # Queue bet and get queue position
+        request_id, queue_position = queue_bet(market_id, wallet, side, amount, tx_hash, signature)
         
-        return jsonify({
-            'success': True,
-            'status': 'queued',
-            'request_id': request_id,
-            'message': 'Your bet is being processed...'
-        }), 202
+        # If queue was empty (position 0), bet will process immediately - no warning needed
+        if queue_position == 0:
+            return jsonify({
+                'success': True,
+                'status': 'processing',
+                'request_id': request_id,
+                'queue_position': 0,
+                'message': 'Your bet is being processed...'
+            }), 202
+        else:
+            # There are bets ahead - show warning
+            return jsonify({
+                'success': True,
+                'status': 'queued',
+                'request_id': request_id,
+                'queue_position': queue_position,
+                'message': 'Your bet is being processed...'
+            }), 202
         
     except Exception as e:
         logger.error(f'Place bet error: {str(e)}')
@@ -260,6 +300,31 @@ def check_bet_status(request_id):
             'status': 'processing',
             'message': 'Bet is still being processed...'
         }), 202
+
+@api_bp.route('/bets/<int:bet_id>/undo', methods=['POST'])
+def undo_bet(bet_id):
+    """Undo/cancel a bet - refund user and reverse market state"""
+    try:
+        data = request.get_json() or {}
+        wallet = (data.get('wallet') or '').strip()
+        
+        if not wallet:
+            return standard_error_response('Wallet address required', 400)
+        
+        # Delegate to bet service
+        result = undo_bet_service(bet_id, wallet)
+        
+        if result is None:
+            return standard_error_response('Bet not found or unauthorized', 404)
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return standard_error_response(result['message'], 400)
+            
+    except Exception as e:
+        logger.error(f'Undo bet error: {str(e)}')
+        return standard_error_response(f'Failed to undo bet: {str(e)}', 500)
 
 # ========== USER API ==========
 @api_bp.route('/user/<wallet>/balance', methods=['GET'])
@@ -282,6 +347,7 @@ def get_user_balance_api(wallet):
 def get_user_bets(wallet):
     """Get user's bets"""
     try:
+        wallet = wallet.lower()  # Normalize wallet address
         conn = get_db()
         try:
             cursor = conn.cursor()
@@ -290,7 +356,7 @@ def get_user_bets(wallet):
                        m.question, m.status, m.resolution, m.description, m.image_url
                 FROM bets b
                 JOIN markets m ON b.market_id = m.id
-                WHERE b.wallet = ?
+                WHERE LOWER(b.wallet) = ?
                 ORDER BY b.created_at DESC
             ''', (wallet,))
             
@@ -351,10 +417,16 @@ def create_market_blockchain():
         data = request.get_json() or {}
         question = (data.get('question') or '').strip()
         description = (data.get('description') or '').strip()
+        image_url = (data.get('image_url') or '').strip()
+        category = (data.get('category') or '').strip()
         end_date = (data.get('end_date') or '').strip()
+        created_by = (data.get('created_by') or 'admin').strip()
         
         if not question:
             return standard_error_response('Question is required', 400)
+        
+        if not end_date:
+            return standard_error_response('End date is required for blockchain markets', 400)
         
         # Parse end_date
         try:
@@ -367,11 +439,14 @@ def create_market_blockchain():
         with db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO markets (question, description, category, end_date, created_by) 
-                VALUES (?,?,?,?,?)
-            ''', (question, description, data.get('category', ''), end_date, data.get('created_by', 'admin')))
+                INSERT INTO markets (question, description, image_url, category, end_date, created_by) 
+                VALUES (?,?,?,?,?,?)
+            ''', (question, description, image_url, category, end_date, created_by))
             market_id = cursor.lastrowid
-            cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, 0.0, 0.0)', (market_id,))
+            # Initialize market state with LMSR buffer to prevent early price swings
+            from config import Config
+            cursor.execute('INSERT INTO market_state (market_id, q_yes, q_no) VALUES (?, ?, ?)', 
+                         (market_id, Config.LMSR_BUFFER, Config.LMSR_BUFFER))
         
         # Try blockchain transaction (this endpoint is called when blockchain deployment is requested)
         blockchain_tx_hash = None
@@ -568,14 +643,15 @@ def upload_kyc_document():
                 # Insert or update KYC record as verified
                 cursor.execute('''
                     INSERT INTO kyc_verifications (
-                        wallet, status, full_name, date_of_birth, document_number,
+                        wallet, status, full_name, date_of_birth, expiry_date, document_number,
                         nationality, document_type, is_official_document,
                         verification_notes, verified_at, updated_at
-                    ) VALUES (?, 'verified', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (?, 'verified', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ON CONFLICT(wallet) DO UPDATE SET
                         status='verified',
                         full_name=excluded.full_name,
                         date_of_birth=excluded.date_of_birth,
+                        expiry_date=excluded.expiry_date,
                         document_number=excluded.document_number,
                         nationality=excluded.nationality,
                         document_type=excluded.document_type,
@@ -587,6 +663,7 @@ def upload_kyc_document():
                     wallet,
                     ai_result.get('full_name', ''),
                     ai_result.get('date_of_birth', ''),
+                    ai_result.get('expiry_date', '') or None,
                     ai_result.get('document_number', ''),
                     ai_result.get('nationality', ''),
                     ai_result.get('document_type', ''),
@@ -596,7 +673,7 @@ def upload_kyc_document():
                 
                 # Update user auth_status to verified
                 cursor.execute('''
-                    UPDATE users SET auth_status='verified' WHERE wallet=?
+                    UPDATE users SET auth_status='verified' WHERE LOWER(wallet)=?
                 ''', (wallet,))
                 
                 # Credit user with KYC reward ONLY if not already verified
@@ -604,13 +681,13 @@ def upload_kyc_document():
                 if not already_verified:
                     update_user_balance(wallet, Config.KYC_REWARD_AMOUNT, 'add')
                     reward_given = True
-                    logger.info(f'KYC verified for wallet {wallet[:10]}..., credited {Config.KYC_REWARD_AMOUNT} USDC')
+                    logger.info(f'KYC verified for wallet {wallet[:10]}..., credited {Config.KYC_REWARD_AMOUNT} EURC')
                 else:
                     logger.info(f'KYC re-verified for wallet {wallet[:10]}... (no reward - already verified previously)')
                 
                 return jsonify({
                     'status': 'verified',
-                    'message': f'Identity verified!{" " + str(Config.KYC_REWARD_AMOUNT) + " USDC credited to your account." if reward_given else " (Re-verification - no reward given)"}',
+                    'message': f'Identity verified!{" " + str(Config.KYC_REWARD_AMOUNT) + " EURC credited to your account." if reward_given else " (Re-verification - no reward given)"}',
                     'reward_given': reward_given,
                     'data': {
                         'full_name': ai_result.get('full_name', ''),
@@ -647,7 +724,7 @@ def upload_kyc_document():
                 
                 # Update user auth_status to rejected
                 cursor.execute('''
-                    UPDATE users SET auth_status='rejected' WHERE wallet=?
+                    UPDATE users SET auth_status='rejected' WHERE LOWER(wallet)=?
                 ''', (wallet,))
                 
                 logger.warning(f'KYC rejected for wallet {wallet[:10]}...: {rejection_reason}')
@@ -679,7 +756,7 @@ def get_kyc_status():
             cursor = conn.cursor()
             # Use LOWER() for case-insensitive lookup
             cursor.execute('''
-                SELECT status, full_name, date_of_birth, document_number,
+                SELECT status, full_name, date_of_birth, expiry_date, document_number,
                        nationality, document_type, verification_notes,
                        verified_at, created_at, updated_at
                 FROM kyc_verifications
