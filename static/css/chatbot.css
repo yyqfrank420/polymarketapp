@@ -3,7 +3,7 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 1000;
+    z-index: 10000; /* Above footer (z-index: 8000) */
     font-family: 'Inter', sans-serif;
 }
 
