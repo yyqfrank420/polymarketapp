@@ -135,40 +135,108 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: message,
                 wallet: wallet,
-                thread_id: chatThreadId
+                thread_id: chatThreadId,
+                stream: true
             })
         });
         
-        const data = await response.json();
-        
-        if (response.ok) {
-            // Save thread ID
-            if (data.thread_id) {
-                chatThreadId = data.thread_id;
-                localStorage.setItem('chatbot_thread_id', chatThreadId);
-            }
-            
-            // Add assistant response
-            addMessage('assistant', data.response);
-            
-            // If bet was placed, reload balance
-            if (data.function_called === 'place_bet' && wallet) {
-                await loadUserBalance();
-            }
-        } else {
-            addMessage('assistant', `Sorry, I encountered an error: ${data.error || 'Unknown error'}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            addMessage('assistant', `Sorry, I encountered an error: ${errorData.error || 'Unknown error'}`);
+            showTyping(false);
+            return;
         }
+        
+        // Handle streaming response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let assistantMessageElement = null;
+        let fullResponse = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.done) {
+                            // Save thread ID
+                            if (data.thread_id) {
+                                chatThreadId = data.thread_id;
+                                localStorage.setItem('chatbot_thread_id', chatThreadId);
+                            }
+                            
+                            // Check if bet was placed (we'd need to detect this differently)
+                            // For now, we'll check the response content
+                            if (fullResponse.toLowerCase().includes('bet placed') && wallet) {
+                                await loadUserBalance();
+                            }
+                            
+                            showTyping(false);
+                            return;
+                        }
+                        
+                        if (data.chunk) {
+                            // Create message element on first chunk
+                            if (!assistantMessageElement) {
+                                assistantMessageElement = addMessageStreaming('assistant');
+                            }
+                            
+                            // Append chunk to message
+                            fullResponse += data.chunk;
+                            if (assistantMessageElement) {
+                                const contentDiv = assistantMessageElement.querySelector('.chatbot-message-content');
+                                if (contentDiv) {
+                                    // Use textContent during streaming for performance
+                                    contentDiv.textContent = fullResponse;
+                                    // Scroll to bottom
+                                    const messagesContainer = document.getElementById('chatbot-messages');
+                                    if (messagesContainer) {
+                                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                    }
+                                }
+                            }
+                            
+                            // Save thread ID if provided
+                            if (data.thread_id) {
+                                chatThreadId = data.thread_id;
+                                localStorage.setItem('chatbot_thread_id', chatThreadId);
+                            }
+                        }
+                        
+                        if (data.done && assistantMessageElement && fullResponse) {
+                            // Format final message with markdown
+                            const contentDiv = assistantMessageElement.querySelector('.chatbot-message-content');
+                            if (contentDiv) {
+                                contentDiv.innerHTML = formatMessage(fullResponse);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE data:', e);
+                    }
+                }
+            }
+        }
+        
+        showTyping(false);
     } catch (error) {
         console.error('Chat error:', error);
         addMessage('assistant', 'Sorry, I\'m having trouble connecting. Please try again.');
-    } finally {
         showTyping(false);
     }
 }
 
 function addMessage(role, content) {
     const messagesContainer = document.getElementById('chatbot-messages');
-    if (!messagesContainer) return;
+    if (!messagesContainer) return null;
     
     const messageDiv = document.createElement('div');
     messageDiv.className = `chatbot-message chatbot-message-${role}`;
@@ -185,6 +253,25 @@ function addMessage(role, content) {
     messageDiv.appendChild(contentDiv);
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    return messageDiv;
+}
+
+function addMessageStreaming(role) {
+    const messagesContainer = document.getElementById('chatbot-messages');
+    if (!messagesContainer) return null;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chatbot-message chatbot-message-${role}`;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'chatbot-message-content';
+    contentDiv.textContent = ''; // Start empty for streaming
+    
+    messageDiv.appendChild(contentDiv);
+    messagesContainer.appendChild(messageDiv);
+    
+    return messageDiv;
 }
 
 function formatMessage(content) {

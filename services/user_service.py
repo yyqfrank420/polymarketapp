@@ -17,8 +17,8 @@ def get_user_balance(wallet):
             if not row:
                 # First time user - credit them with fake crypto
                 cursor.execute('''
-                    INSERT INTO users (wallet, balance, last_login)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO users (wallet, balance, last_login, auth_status)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, 'unverified')
                 ''', (wallet, Config.INITIAL_FAKE_CRYPTO_BALANCE))
                 return Config.INITIAL_FAKE_CRYPTO_BALANCE
             

@@ -1,18 +1,28 @@
 """Chatbot function implementations - called by chatbot service"""
 import logging
+import threading
 from utils.database import get_db, _row_to_dict
 from services.market_service import calculate_market_price
 from services.bet_service import queue_bet
 from services.user_service import get_user_balance
 from services.chatbot_service import get_chatbot_service
 from utils.validators import validate_amount, validate_side
+from utils.cache import get_cache
 
 logger = logging.getLogger(__name__)
+_cache = get_cache()
 
 def execute_chatbot_function(function_name, arguments_dict, wallet=None):
     """Execute chatbot function calls"""
     try:
         if function_name == "get_all_markets":
+            # Check cache first (60 second TTL)
+            cache_key = "all_markets"
+            cached = _cache.get(cache_key, ttl=60)
+            if cached:
+                logger.info("Returning cached market list")
+                return cached
+            
             conn = get_db()
             try:
                 cursor = conn.cursor()
@@ -26,14 +36,23 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                 for row in raw_markets:
                     market = dict(_row_to_dict(row))
                     
-                    # Add current odds for open markets
-                    try:
-                        yes_price, no_price = calculate_market_price(market['id'])
-                        market['yes_odds'] = round(yes_price * 100, 2)
-                        market['no_odds'] = round(no_price * 100, 2)
-                    except:
-                        market['yes_odds'] = None
-                        market['no_odds'] = None
+                    # Add current odds for open markets (with caching)
+                    cache_key_odds = f"market_odds_{market['id']}"
+                    cached_odds = _cache.get(cache_key_odds, ttl=30)
+                    if cached_odds:
+                        market['yes_odds'] = cached_odds['yes']
+                        market['no_odds'] = cached_odds['no']
+                    else:
+                        try:
+                            yes_price, no_price = calculate_market_price(market['id'])
+                            yes_odds = round(yes_price * 100, 2)
+                            no_odds = round(no_price * 100, 2)
+                            market['yes_odds'] = yes_odds
+                            market['no_odds'] = no_odds
+                            _cache.set(cache_key_odds, {'yes': yes_odds, 'no': no_odds})
+                        except:
+                            market['yes_odds'] = None
+                            market['no_odds'] = None
                     
                     # Categorize markets by keywords for AI to use
                     question_lower = market['question'].lower()
@@ -50,12 +69,16 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                     
                     markets.append(market)
                 
-                return {
+                result = {
                     "markets": markets,
                     "count": len(markets),
                     "categories": {k: len(v) for k, v in categories.items()},
                     "message": f"Found {len(markets)} open markets across {len(categories)} categories. Be selective and ask user what they're interested in rather than showing all."
                 }
+                
+                # Cache the result
+                _cache.set(cache_key, result)
+                return result
             finally:
                 pass  # Connection managed by Flask
         
@@ -64,15 +87,24 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
             if not isinstance(market_id, int) or market_id <= 0:
                 return {"error": "Invalid market_id"}
             
+            # Check cache first (30 second TTL)
+            cache_key = f"market_odds_{market_id}"
+            cached = _cache.get(cache_key, ttl=30)
+            if cached:
+                logger.info(f"Returning cached odds for market {market_id}")
+                return cached
+            
             try:
                 yes_price, no_price = calculate_market_price(market_id)
-                return {
+                result = {
                     "market_id": market_id,
                     "yes_price": round(yes_price * 100, 2),
                     "no_price": round(no_price * 100, 2),
                     "yes_price_cents": f"{round(yes_price * 100, 2)}¢",
                     "no_price_cents": f"{round(no_price * 100, 2)}¢"
                 }
+                _cache.set(cache_key, result)
+                return result
             except ValueError as e:
                 return {"error": str(e)}
         
@@ -169,11 +201,20 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
             if not query:
                 return {"error": "Query is required"}
             
+            # Check cache first (10 minute TTL - aggressive caching to avoid API calls)
+            cache_key = f"news_{query.lower().strip()}"
+            cached = _cache.get(cache_key, ttl=600)  # 10 minutes
+            if cached:
+                logger.info(f"Returning cached news for query: {query}")
+                return cached
+            
             chatbot_service = get_chatbot_service()
             if not chatbot_service.tavily_client:
                 return {"error": "News search not configured"}
             
+            # Only call Tavily if cache miss - synchronous call, then cache result
             try:
+                logger.info(f"Calling Tavily API for query: {query}")
                 response = chatbot_service.tavily_client.search(query, max_results=5)
                 articles = []
                 for result in response.get('results', []):
@@ -182,7 +223,11 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                         "url": result.get('url', ''),
                         "content": result.get('content', '')[:200] + "..."
                     })
-                return {"articles": articles, "query": query}
+                result = {"articles": articles, "query": query}
+                # Cache for 10 minutes to avoid repeated calls
+                _cache.set(cache_key, result)
+                logger.info(f"Cached news results for query: {query}")
+                return result
             except Exception as e:
                 logger.error(f'News search error: {str(e)}')
                 return {"error": f"Failed to search news: {str(e)}"}
@@ -191,6 +236,13 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
             market_id = arguments_dict.get('market_id')
             if not isinstance(market_id, int) or market_id <= 0:
                 return {"error": "Invalid market_id"}
+            
+            # Check cache first (10 minute TTL - aggressive caching)
+            cache_key = f"market_context_{market_id}"
+            cached = _cache.get(cache_key, ttl=600)  # 10 minutes
+            if cached:
+                logger.info(f"Returning cached context for market {market_id}")
+                return cached
             
             conn = get_db()
             try:
@@ -206,7 +258,9 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                 if not chatbot_service.tavily_client:
                     return {"error": "News search not configured"}
                 
+                # Only call Tavily if cache miss - synchronous call, then cache result
                 try:
+                    logger.info(f"Calling Tavily API for market context: {market_id}")
                     response = chatbot_service.tavily_client.search(query, max_results=3)
                     articles = []
                     for result in response.get('results', []):
@@ -215,7 +269,11 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                             "url": result.get('url', ''),
                             "snippet": result.get('content', '')[:150] + "..."
                         })
-                    return {"market_id": market_id, "question": query, "articles": articles}
+                    result = {"market_id": market_id, "question": query, "articles": articles}
+                    # Cache for 10 minutes
+                    _cache.set(cache_key, result)
+                    logger.info(f"Cached market context for market {market_id}")
+                    return result
                 except Exception as e:
                     logger.error(f'Market context search error: {str(e)}')
                     return {"error": f"Failed to get market context: {str(e)}"}

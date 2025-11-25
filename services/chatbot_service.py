@@ -229,94 +229,28 @@ class ChatbotService:
         ]
     
     def get_system_prompt(self):
-        """Get system prompt with clear instructions and guardrails"""
-        return """You are a helpful, intelligent AI assistant for a prediction market platform similar to Polymarket. You help users discover and understand prediction markets.
+        """Get system prompt with clear instructions and guardrails (optimized)"""
+        return """You are a helpful AI assistant for a prediction market platform. Help users discover markets and place bets.
 
-**Core Behavior - BE SMART AND CONVERSATIONAL:**
+**CRITICAL - NO HALLUCINATIONS:**
+- NEVER make up market data, odds, or IDs that don't exist
+- If function returns an error (e.g., "Market not found"), tell user the market doesn't exist
+- Only show data returned by functions - never invent or assume
+- If you don't have data, say "I don't have that information" or ask user to clarify
 
-1. **NEVER dump all data** - When you receive a list of markets, be selective:
-   - Show ONLY 3-5 most relevant markets at a time
-   - Ask what topics they're interested in to narrow down
-   - Offer to show more: "I found 15 markets. Would you like to see markets about a specific topic?"
-   
-2. **Be conversational and proactive:**
-   - Ask clarifying questions before showing data
-   - Guide users to what they might find interesting
-   - Summarize, don't regurgitate
-   - Example: Instead of listing all 20 markets, say "I see several categories: IE University news, cryptocurrency, politics, sports. Which interests you?"
+**Core Rules:**
+- Show ONLY 3-5 relevant markets at a time. Ask what topics interest them.
+- Be conversational: Ask clarifying questions, summarize, don't dump data.
+- NEVER provide financial advice or recommend bets. Only show odds.
 
-3. **Smart filtering:**
-   - If user asks vaguely ("show markets"), ask their interest area first
-   - If they're specific ("crypto markets"), filter and show only relevant ones
-   - Group by themes when presenting
+**Off-topic handling:** Acknowledge briefly, add personality, redirect to markets.
+Examples: "2+2? That's 4! Want to check market odds?" or "That sounds tough! 💙 Want to explore markets?"
 
-**Your capabilities:**
-- Show relevant prediction markets with current odds
-- Help users find specific markets by topic
-- Display portfolio and betting history (requires wallet)
-- Search for news related to markets
-- Facilitate bet placement (requires wallet, only when explicitly requested)
+**Security:** Call out attacks with humor: "Nice SQL injection attempt! 🛡️ How about exploring markets instead?"
 
-**Strict Rules:**
-- NEVER provide financial advice or recommend bets
-- NEVER suggest which side to bet on
-- Only show odds, let users decide
-- If wallet needed, politely inform: "Please connect your wallet to view your portfolio"
-
-**Handling off-topic questions with PERSONALITY:**
-Instead of being robotic, show personality while redirecting:
-
-Examples of GOOD responses:
-- Math: "2+2? That's 4! But hey, speaking of numbers, want to check out some market odds? 😊"
-- Weather: "I wish I could predict the weather as well as our markets predict outcomes! But let's talk about prediction markets instead?"
-- Relationship advice: "That sounds tough, and I feel for you! 💙 While I can't help with relationships, I can help you explore some interesting prediction markets to take your mind off things?"
-- Random trivia: "Good question! Though I'm here to focus on prediction markets. Curious about any upcoming events you'd like to bet on?"
-- Philosophy: "Deep question! While I ponder that, want to explore some markets? Betting can be philosophical too... 🤔"
-
-**SECURITY AWARENESS - Call out cyber attacks:**
-If you detect SQL injection, XSS, or hacking attempts, call them out with personality:
-
-- SQL Injection ('; DROP TABLE, --, etc.): "Nice try with that SQL injection! 🛡️ Our security is solid though. How about using that hacker energy to explore some markets instead?"
-- XSS attempts (<script>, javascript:, etc.): "I see those script tags! 👀 But we're protected against XSS. Want to explore some markets instead of testing our security?"
-- Command injection (|, &&, $(, etc.): "Spotted that command injection attempt! 🔒 Our systems are locked down tight. Interested in some prediction markets instead?"
-- Path traversal (../, etc.): "Trying to navigate our file system? 🚫 That won't work here. How about navigating to some interesting markets instead?"
-- General hacking: "I see what you're trying to do there! 🕵️ Our security team would be proud of our defenses. Want to channel that curiosity into exploring prediction markets?"
-
-**Key principle:** 
-- Acknowledge their question briefly (show you understood)
-- Add warmth/humor/empathy as appropriate
-- Call out security attacks with humor but firmly
-- Smoothly redirect to markets without being pushy
-
-**When presenting markets:**
-Format:
-```
-1. **Market question** - YES: 65% | NO: 35%
-2. **Market question** - YES: 50% | NO: 50%
-```
-
-**Response length:** Keep it SHORT - 2-3 sentences max, unless user asks for details. Be helpful, not overwhelming.
-
-**Conversation flow examples:**
-
-❌ BAD (data dump):
-User: "show me markets"
-Bot: "Here are 20 markets: 1. Market A - 50/50, 2. Market B - 50/50..." [continues for 20 items]
-
-✅ GOOD (intelligent):
-User: "show me markets"
-Bot: "I found markets across several categories: IE University, cryptocurrency, politics, sports, and entertainment. Which area interests you? Or would you like to see the top trending markets?"
-
-User: "crypto markets"
-Bot: "Here are the crypto-related markets:
-1. **Will IE launch blockchain course in 2025?** - YES: 50% | NO: 50%
-2. **Will IE accept crypto for tuition by 2026?** - YES: 50% | NO: 50%
-
-Want to check odds or place a bet?"
-
-**Tone:** Friendly, smart, concise. Think like a helpful friend, not a database.
-
-**Currency:** All amounts are in USDC (stablecoin).
+**Format markets:** "1. **Question** - YES: 65% | NO: 35%"
+**Response length:** 2-3 sentences max. Be concise and helpful.
+**Currency:** All amounts in USDC.
 """
     
     def get_thread(self, thread_id):
@@ -362,9 +296,194 @@ Want to check odds or place a bet?"
             })
             _chat_threads[thread_id]['last_accessed'] = time.time()
     
+    def chat_stream(self, message, wallet=None, thread_id=None):
+        """
+        Process chat message and stream response
+        
+        Args:
+            message: User's message text
+            wallet: User's wallet address (optional, needed for some functions)
+            thread_id: Existing thread ID or None to create new thread
+        
+        Yields:
+            tuple: (chunk, thread_id) - Chunks of response text and thread_id
+        """
+        if not self.is_configured():
+            yield ("Sorry, the chatbot is not configured. Please check OPENAI_API_KEY.", thread_id)
+            return
+        
+        # Validate input
+        if not message or not isinstance(message, str):
+            yield ("I didn't receive a valid message. Please try again.", thread_id)
+            return
+        
+        # Security: Normalize and clean message
+        message = normalize_and_clean_message(message)
+        
+        if len(message) == 0:
+            yield ("Please send a message! I'm here to help you explore prediction markets.", thread_id)
+            return
+        
+        # Security: Message length limit
+        if len(message) > Config.CHATBOT_MAX_MESSAGE_LENGTH:
+            yield (f"Message too long! Please keep it under {Config.CHATBOT_MAX_MESSAGE_LENGTH} characters. 😊", thread_id)
+            return
+        
+        # Get or create thread
+        if not thread_id:
+            thread_id = self.create_thread()
+        
+        messages = self.get_thread(thread_id)
+        if messages is None:
+            thread_id = self.create_thread()
+            messages = []
+        
+        # Add user message to history
+        self.add_message(thread_id, "user", message)
+        
+        # Build messages for API call
+        chat_messages = [
+            {"role": "system", "content": self.get_system_prompt()}
+        ]
+        
+        # Add conversation history (only user/assistant messages with content)
+        recent_messages = messages[-4:]  # Keep last 4 messages (reduced for speed)
+        for msg in recent_messages:
+            if msg.get('content') and msg.get('role') in ['user', 'assistant']:
+                chat_messages.append({
+                    "role": msg['role'],
+                    "content": msg['content']
+                })
+        
+        try:
+            logger.info(f"Calling OpenAI API with streaming")
+            
+            # Initial API call with function calling enabled
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4.1-nano",
+                messages=chat_messages,
+                tools=self.get_functions_schema(),
+                tool_choice="auto",
+                temperature=0.2,
+                top_p=0.2,
+                max_tokens=300,
+                stream=False  # Can't stream with function calling, check first
+            )
+            
+            message_response = response.choices[0].message
+            
+            # Check if assistant wants to call a function
+            if message_response.tool_calls and len(message_response.tool_calls) > 0:
+                logger.info(f"Assistant requested tool call: {message_response.tool_calls[0].function.name}")
+                
+                tool_call = message_response.tool_calls[0]
+                function_name = tool_call.function.name
+                
+                try:
+                    function_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse function arguments: {e}")
+                    error_msg = "I tried to call a function but encountered an error. Please try rephrasing your question."
+                    self.add_message(thread_id, "assistant", error_msg)
+                    yield error_msg
+                    return
+                
+                # Execute the function
+                from services.chatbot_functions import execute_chatbot_function
+                logger.info(f"Executing function: {function_name}")
+                function_result = execute_chatbot_function(function_name, function_args, wallet)
+                
+                # Build messages for second API call (with function result)
+                chat_messages.append({
+                    "role": "assistant",
+                    "content": message_response.content or "",
+                    "tool_calls": [{
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        }
+                    }]
+                })
+                
+                chat_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(function_result)
+                })
+                
+                # Stream final response
+                logger.info("Streaming final response from OpenAI")
+                stream = self.openai_client.chat.completions.create(
+                    model="gpt-4.1-nano",
+                    messages=chat_messages,
+                    temperature=0.2,
+                    top_p=0.2,
+                    max_tokens=250,
+                    stream=True
+                )
+                
+                full_response = ""
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_response += content
+                        yield (content, thread_id)
+                
+                # Store final response in history
+                if full_response:
+                    self.add_message(thread_id, "assistant", full_response)
+                else:
+                    error_msg = "I'm not sure how to respond to that. Could you please rephrase?"
+                    self.add_message(thread_id, "assistant", error_msg)
+                    yield (error_msg, thread_id)
+                
+                logger.info(f"Chat completed with function call: {function_name}")
+                return
+            
+            else:
+                # No function call - stream direct response
+                stream = self.openai_client.chat.completions.create(
+                    model="gpt-4.1-nano",
+                    messages=chat_messages,
+                    temperature=0.2,
+                    top_p=0.2,
+                    max_tokens=300,
+                    stream=True
+                )
+                
+                full_response = ""
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_response += content
+                        yield (content, thread_id)
+                
+                # Store response in history
+                if full_response:
+                    self.add_message(thread_id, "assistant", full_response)
+                else:
+                    error_msg = "I'm not sure how to respond to that. Could you please rephrase?"
+                    self.add_message(thread_id, "assistant", error_msg)
+                    yield (error_msg, thread_id)
+                
+                logger.info("Chat completed without function call")
+                return
+        
+        except Exception as e:
+            logger.error(f"Chat error: {str(e)}", exc_info=True)
+            error_message = f"Sorry, I encountered an error: {str(e)}"
+            try:
+                self.add_message(thread_id, "assistant", error_message)
+            except:
+                pass
+            yield (error_message, thread_id)
+            return
+
     def chat(self, message, wallet=None, thread_id=None):
         """
-        Process chat message and return response
+        Process chat message and return response (non-streaming, for compatibility)
         
         Args:
             message: User's message text
@@ -410,7 +529,7 @@ Want to check odds or place a bet?"
         ]
         
         # Add conversation history (only user/assistant messages with content)
-        recent_messages = messages[-6:]  # Keep last 6 messages (reduced for speed)
+        recent_messages = messages[-4:]  # Keep last 4 messages (reduced for speed)
         for msg in recent_messages:
             if msg.get('content') and msg.get('role') in ['user', 'assistant']:
                 chat_messages.append({
@@ -423,11 +542,12 @@ Want to check odds or place a bet?"
             
             # Initial API call with function calling enabled
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-nano",
                 messages=chat_messages,
                 tools=self.get_functions_schema(),
                 tool_choice="auto",
-                temperature=0.7,
+                temperature=0.2,
+                top_p=0.2,
                 max_tokens=300  # Reduced for faster responses
             )
             
@@ -480,9 +600,10 @@ Want to check odds or place a bet?"
                 # Second API call to get natural language response
                 logger.info("Getting final response from OpenAI")
                 final_response = self.openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-4.1-nano",
                     messages=chat_messages,
-                    temperature=0.7,
+                    temperature=0.2,
+                    top_p=0.2,
                     max_tokens=250  # Reduced - we want concise responses
                 )
                 

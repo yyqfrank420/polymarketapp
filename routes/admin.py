@@ -236,20 +236,21 @@ def get_all_users():
         try:
             cursor = conn.cursor()
             
-            # Get all users with their bet statistics
+            # Get all users with their bet statistics and auth status
             cursor.execute('''
                 SELECT 
                     u.wallet,
                     u.balance,
                     u.created_at,
                     u.last_login,
+                    COALESCE(u.auth_status, 'unverified') as auth_status,
                     COUNT(DISTINCT b.id) as total_bets,
                     COALESCE(SUM(b.amount), 0) as total_bet_amount,
                     COUNT(DISTINCT CASE WHEN b.shares > 0 AND m.status = 'open' THEN b.id END) as open_positions
                 FROM users u
                 LEFT JOIN bets b ON u.wallet = b.wallet
                 LEFT JOIN markets m ON b.market_id = m.id
-                GROUP BY u.wallet, u.balance, u.created_at, u.last_login
+                GROUP BY u.wallet, u.balance, u.created_at, u.last_login, u.auth_status
                 ORDER BY u.created_at DESC
             ''')
             
@@ -263,7 +264,8 @@ def get_all_users():
                     'total_bet_amount': round(user_data['total_bet_amount'] or 0.0, 2),
                     'open_positions': user_data['open_positions'] or 0,
                     'created_at': user_data['created_at'],
-                    'last_login': user_data['last_login']
+                    'last_login': user_data['last_login'],
+                    'auth_status': user_data.get('auth_status', 'unverified')
                 })
             
             return jsonify({'users': users}), 200

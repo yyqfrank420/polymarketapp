@@ -1,6 +1,7 @@
 """API Routes - Clean microservices architecture"""
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 import logging
+import json
 from datetime import datetime
 from utils.database import get_db, db_transaction, _row_to_dict
 from utils.validators import (
@@ -431,12 +432,13 @@ def get_blockchain_status(market_id):
 # ========== CHATBOT API ==========
 @api_bp.route('/chat', methods=['POST'])
 def chat():
-    """AI Chatbot endpoint with rate limiting (30 requests/minute)"""
+    """AI Chatbot endpoint with streaming support and rate limiting (30 requests/minute)"""
     try:
         data = request.get_json() or {}
         message = data.get('message', '').strip()
         wallet = data.get('wallet', '').strip()
         thread_id = data.get('thread_id')
+        stream = data.get('stream', True)  # Default to streaming
         
         if not message:
             return standard_error_response('Message is required', 400)
@@ -447,13 +449,28 @@ def chat():
         if not chatbot_service.is_configured():
             return standard_error_response('Chatbot not configured', 500)
         
-        response_text, thread_id, function_called = chatbot_service.chat(message, wallet, thread_id)
-        
-        return jsonify({
-            'response': response_text,
-            'thread_id': thread_id,
-            'function_called': function_called
-        }), 200
+        if stream:
+            # Streaming response
+            def generate():
+                current_thread_id = thread_id
+                full_response = ""
+                for chunk, tid in chatbot_service.chat_stream(message, wallet, thread_id):
+                    if tid:
+                        current_thread_id = tid
+                    full_response += chunk
+                    yield f"data: {json.dumps({'chunk': chunk, 'thread_id': current_thread_id})}\n\n"
+                # Send final message
+                yield f"data: {json.dumps({'done': True, 'thread_id': current_thread_id})}\n\n"
+            
+            return Response(generate(), mimetype='text/event-stream')
+        else:
+            # Non-streaming (backward compatibility)
+            response_text, thread_id, function_called = chatbot_service.chat(message, wallet, thread_id)
+            return jsonify({
+                'response': response_text,
+                'thread_id': thread_id,
+                'function_called': function_called
+            }), 200
     
     except Exception as e:
         logger.error(f'Chat error: {str(e)}')
@@ -570,6 +587,11 @@ def upload_kyc_document():
                     ai_result.get('verification_notes', '')
                 ))
                 
+                # Update user auth_status to verified
+                cursor.execute('''
+                    UPDATE users SET auth_status='verified' WHERE wallet=?
+                ''', (wallet,))
+                
                 # Credit user with KYC reward ONLY if not already verified
                 reward_given = False
                 if not already_verified:
@@ -615,6 +637,11 @@ def upload_kyc_document():
                     1 if ai_result.get('is_official_document') else 0,
                     rejection_reason
                 ))
+                
+                # Update user auth_status to rejected
+                cursor.execute('''
+                    UPDATE users SET auth_status='rejected' WHERE wallet=?
+                ''', (wallet,))
                 
                 logger.warning(f'KYC rejected for wallet {wallet[:10]}...: {rejection_reason}')
                 

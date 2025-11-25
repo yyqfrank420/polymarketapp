@@ -1498,7 +1498,7 @@ async function loadUserDatabase() {
         if (!res.ok || !data.users || data.users.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="text-center py-4 text-muted">No users found</td>
+                    <td colspan="9" class="text-center py-4 text-muted">No users found</td>
                 </tr>
             `;
             return;
@@ -1509,6 +1509,17 @@ async function loadUserDatabase() {
             const createdDate = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A';
             const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never';
             
+            // Auth status badge
+            const authStatus = user.auth_status || 'unverified';
+            let authBadge = '';
+            if (authStatus === 'verified') {
+                authBadge = '<span class="badge bg-success">✓ Verified</span>';
+            } else if (authStatus === 'rejected') {
+                authBadge = '<span class="badge bg-danger">✕ Rejected</span>';
+            } else {
+                authBadge = '<span class="badge bg-secondary">Unverified</span>';
+            }
+            
             return `
                 <tr>
                     <td>
@@ -1517,6 +1528,7 @@ async function loadUserDatabase() {
                             📋
                         </button>
                     </td>
+                    <td>${authBadge}</td>
                     <td class="text-end"><strong>${formatNumberWithCommas(user.balance, 2)} USDC</strong></td>
                     <td class="text-end">${formatNumberWithCommas(user.total_bets, 0)}</td>
                     <td class="text-end">${formatNumberWithCommas(user.total_bet_amount, 2)} USDC</td>
@@ -1542,7 +1554,7 @@ async function loadUserDatabase() {
         if (tbody) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="text-center py-4 text-danger">Error loading users: ${e.message}</td>
+                    <td colspan="9" class="text-center py-4 text-danger">Error loading users: ${e.message}</td>
                 </tr>
             `;
         }

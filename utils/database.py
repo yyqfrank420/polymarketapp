@@ -97,9 +97,16 @@ def init_db():
                 wallet TEXT PRIMARY KEY,
                 balance REAL DEFAULT 0.0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                last_login DATETIME
+                last_login DATETIME,
+                auth_status TEXT DEFAULT 'unverified' CHECK(auth_status IN ('unverified', 'verified', 'rejected'))
             )
         ''')
+        
+        # Add auth_status column to existing users table if it doesn't exist
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN auth_status TEXT DEFAULT "unverified" CHECK(auth_status IN ("unverified", "verified", "rejected"))')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         # Market state table for LMSR
         cursor.execute('''
