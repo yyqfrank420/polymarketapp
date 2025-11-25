@@ -311,6 +311,8 @@ def debug_queue():
     """Debug endpoint to check bet queue and worker status"""
     try:
         from services.bet_service import bet_queue, bet_results, bet_results_lock, bet_worker_thread, ensure_worker_running
+        import os
+        from config import Config
         
         # Ensure worker is running
         ensure_worker_running()
@@ -333,13 +335,38 @@ def debug_queue():
                 for rid, r in recent_results
             ]
         
+        # Database diagnostics
+        db_path = Config.DATABASE_PATH
+        db_exists = os.path.exists(db_path)
+        db_readable = os.access(db_path, os.R_OK) if db_exists else False
+        db_writable = os.access(db_path, os.W_OK) if db_exists else False
+        
+        # Test database connection
+        db_test_result = None
+        try:
+            from utils.database import get_db
+            test_conn = get_db()
+            test_cursor = test_conn.cursor()
+            test_cursor.execute('SELECT 1 as test')
+            db_test_result = test_cursor.fetchone()
+            db_test_result = 'SUCCESS' if db_test_result else 'FAILED'
+        except Exception as db_error:
+            db_test_result = f'ERROR: {str(db_error)}'
+        
         return jsonify({
             'queue_size': queue_size,
             'worker_alive': worker_alive,
             'worker_thread': str(bet_worker_thread) if bet_worker_thread else None,
             'recent_results_count': len(results_info),
             'recent_results': results_info,
-            'status': 'healthy' if worker_alive else 'worker_dead'
+            'status': 'healthy' if worker_alive else 'worker_dead',
+            'database': {
+                'path': db_path,
+                'exists': db_exists,
+                'readable': db_readable,
+                'writable': db_writable,
+                'connection_test': db_test_result
+            }
         }), 200
     except Exception as e:
         logger.error(f'Debug queue error: {str(e)}', exc_info=True)
