@@ -45,7 +45,7 @@ if LIMITER_AVAILABLE:
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=["100 per hour"],  # Global rate limit
+        default_limits=["1000 per hour"],  # Global rate limit (increased for demo/ngrok)
         storage_uri="memory://"  # In-memory storage (use Redis in production)
     )
     logger = logging.getLogger(__name__)

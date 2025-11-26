@@ -24,6 +24,7 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 # ========== MARKETS API ==========
 @api_bp.route('/markets', methods=['GET'])
 def list_markets():
+    """List all open markets with LMSR prices (excludes resolved markets) - Rate limit exempted for public polling"""
     """List all open markets with LMSR prices (excludes resolved markets)"""
     try:
         conn = get_db()
@@ -539,13 +540,32 @@ def chat():
             def generate():
                 current_thread_id = thread_id
                 full_response = ""
-                for chunk, tid in chatbot_service.chat_stream(message, wallet, thread_id):
+                bet_metadata = None
+                for result in chatbot_service.chat_stream(message, wallet, thread_id):
+                    # Handle tuple unpacking (chunk, tid) or (chunk, tid, metadata)
+                    if len(result) == 3:
+                        chunk, tid, metadata = result
+                        if metadata:
+                            bet_metadata = metadata
+                    else:
+                        chunk, tid = result
+                        metadata = None
+                    
                     if tid:
                         current_thread_id = tid
-                    full_response += chunk
-                    yield f"data: {json.dumps({'chunk': chunk, 'thread_id': current_thread_id})}\n\n"
-                # Send final message
-                yield f"data: {json.dumps({'done': True, 'thread_id': current_thread_id})}\n\n"
+                    
+                    if chunk:
+                        full_response += chunk
+                        yield f"data: {json.dumps({'chunk': chunk, 'thread_id': current_thread_id})}\n\n"
+                    elif metadata:
+                        # Send bet metadata
+                        yield f"data: {json.dumps({'bet_metadata': metadata, 'thread_id': current_thread_id})}\n\n"
+                
+                # Send final message with bet metadata if present
+                final_data = {'done': True, 'thread_id': current_thread_id}
+                if bet_metadata:
+                    final_data['bet_metadata'] = bet_metadata
+                yield f"data: {json.dumps(final_data)}\n\n"
             
             return Response(generate(), mimetype='text/event-stream')
         else:

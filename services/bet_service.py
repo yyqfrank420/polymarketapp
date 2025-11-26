@@ -8,7 +8,10 @@ from collections import OrderedDict
 from utils.database import get_db, db_transaction
 from services.user_service import get_user_balance, update_user_balance
 from services.market_service import calculate_shares_lmsr
+from utils.cache import get_cache
 from config import Config
+
+_cache = get_cache()
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +123,11 @@ def bet_worker():
                     new_balance = update_user_balance(wallet, amount, 'deduct')
                     
                     logger.info(f'Bet placed: market {market_id}, {side} €{amount:.2f} ({shares:.2f} shares @ €{price_per_share:.4f}) by {wallet}')
+                    
+                    # Invalidate cache for this market's odds (so chatbot gets fresh data immediately)
+                    cache_key = f"market_odds_{market_id}"
+                    _cache.delete(cache_key)
+                    logger.info(f"Invalidated odds cache for market {market_id} after bet")
                     
                     # Store result
                     with bet_results_lock:

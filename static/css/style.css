@@ -761,6 +761,45 @@ body.dark-mode * {
     box-shadow: 0 0 12px rgba(255, 71, 87, 0.4);
 }
 
+/* Glow animation for bet completion feedback */
+@keyframes bet-complete-glow-yes {
+    0% {
+        box-shadow: 0 0 0 rgba(0, 217, 163, 0);
+        border-color: rgba(0, 217, 163, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(0, 217, 163, 0.6), 0 0 40px rgba(0, 217, 163, 0.4);
+        border-color: rgba(0, 217, 163, 0.8);
+    }
+    100% {
+        box-shadow: 0 0 0 rgba(0, 217, 163, 0);
+        border-color: rgba(0, 217, 163, 0.4);
+    }
+}
+
+@keyframes bet-complete-glow-no {
+    0% {
+        box-shadow: 0 0 0 rgba(255, 71, 87, 0);
+        border-color: rgba(255, 71, 87, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(255, 71, 87, 0.6), 0 0 40px rgba(255, 71, 87, 0.4);
+        border-color: rgba(255, 71, 87, 0.8);
+    }
+    100% {
+        box-shadow: 0 0 0 rgba(255, 71, 87, 0);
+        border-color: rgba(255, 71, 87, 0.4);
+    }
+}
+
+.odds-btn.bet-complete-glow-yes {
+    animation: bet-complete-glow-yes 1.5s ease-out;
+}
+
+.odds-btn.bet-complete-glow-no {
+    animation: bet-complete-glow-no 1.5s ease-out;
+}
+
 /* Market Detail Page */
 .market-detail-section {
     padding: 120px 0 80px;

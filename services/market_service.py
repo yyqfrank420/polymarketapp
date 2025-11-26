@@ -2,7 +2,10 @@
 import math
 import threading
 from utils.database import get_db, db_transaction
+from utils.cache import get_cache
 from config import Config
+
+_cache = get_cache()
 
 # Thread-safe market state operations
 _market_state_lock = threading.Lock()
@@ -56,6 +59,10 @@ def update_market_state(market_id, q_yes, q_no):
                 VALUES (?, ?, ?)
                 ON CONFLICT(market_id) DO UPDATE SET q_yes=?, q_no=?
             ''', (market_id, q_yes, q_no, q_yes, q_no))
+            
+            # Invalidate odds cache when market state changes
+            cache_key = f"market_odds_{market_id}"
+            _cache.delete(cache_key)
 
 def calculate_market_price(market_id):
     """

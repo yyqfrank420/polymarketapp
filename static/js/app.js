@@ -249,12 +249,13 @@ async function loadHomeMarkets() {
         const data = await res.json();
         allMarkets = data.markets || [];
         
-        console.log(`Loaded ${allMarkets.length} markets from API`);
+        console.log(`[DEBUG] Loaded ${allMarkets.length} markets from API`);
         
         // Update stats
         updateHomeStats(allMarkets);
         
         // Display markets
+        console.log(`[DEBUG] Calling filterMarkets with ${allMarkets.length} markets`);
         filterMarkets();
         
         const loadingEl = document.getElementById('marketsLoading');
@@ -282,49 +283,51 @@ function filterMarkets() {
     const searchTerm = document.getElementById('searchMarkets')?.value.toLowerCase() || '';
     
     let filtered = allMarkets;
-    console.log(`Filtering ${allMarkets.length} markets, currentFilter="${currentFilter}", searchTerm="${searchTerm}"`);
+    console.log(`[DEBUG] filterMarkets: starting with ${allMarkets.length} markets, filter="${currentFilter}", search="${searchTerm}"`);
     
     // Filter by category
     if (currentFilter !== 'all') {
-        const before = filtered.length;
         filtered = filtered.filter(m => (m.category || '').toLowerCase() === currentFilter);
-        console.log(`After category filter (${currentFilter}): ${before} → ${filtered.length}`);
+        console.log(`[DEBUG] After category filter: ${filtered.length} markets`);
     }
     
     // Filter by search
     if (searchTerm) {
-        const before = filtered.length;
         filtered = filtered.filter(m => 
             (m.question || '').toLowerCase().includes(searchTerm) ||
             (m.description || '').toLowerCase().includes(searchTerm)
         );
-        console.log(`After search filter: ${before} → ${filtered.length}`);
+        console.log(`[DEBUG] After search filter: ${filtered.length} markets`);
     }
     
-    console.log(`Calling renderHomeMarkets with ${filtered.length} markets`);
+    console.log(`[DEBUG] Calling renderHomeMarkets with ${filtered.length} markets`);
     renderHomeMarkets(filtered);
 }
 
 function renderHomeMarkets(markets) {
     const container = document.getElementById('marketsList');
+    console.log(`[DEBUG] renderHomeMarkets called with ${markets.length} markets`);
+    console.log(`[DEBUG] Container found: ${!!container}`);
+    
     if (!container) {
-        console.error('marketsList container not found!');
+        console.error('[DEBUG] marketsList container not found!');
         return;
     }
     
-    console.log(`Rendering ${markets.length} markets`);
-    
     if (!markets.length) {
+        console.log('[DEBUG] No markets to render, showing empty state');
         container.innerHTML = '';
         const emptyEl = document.getElementById('marketsEmpty');
         if (emptyEl) emptyEl.style.display = 'block';
         return;
     }
     
+    console.log(`[DEBUG] Rendering ${markets.length} markets`);
     const emptyEl = document.getElementById('marketsEmpty');
     if (emptyEl) emptyEl.style.display = 'none';
     
-    container.innerHTML = markets.map(m => {
+    try {
+        container.innerHTML = markets.map(m => {
         // Use LMSR prices from API (not calculated from totals!)
         const yesPercent = (m.yes_price_cents !== undefined ? m.yes_price_cents : (m.yes_price ? m.yes_price * 100 : 50)).toFixed(0);
         const noPercent = (m.no_price_cents !== undefined ? m.no_price_cents : (m.no_price ? m.no_price * 100 : 50)).toFixed(0);
@@ -333,6 +336,9 @@ function renderHomeMarkets(markets) {
         const statusText = m.status === 'resolved' ? `Resolved: ${m.resolution}` : 'Open';
         
         const imageUrl = m.image_url || 'https://via.placeholder.com/800x400/1E293B/3B82F6?text=No+Image';
+        
+        // Calculate total volume for display
+        const totalVolume = (m.yes_total || 0) + (m.no_total || 0);
         
         return `
             <a href="/market/${m.id}" class="market-card">
@@ -354,13 +360,17 @@ function renderHomeMarkets(markets) {
                     </div>
                     
                     <div class="market-stats">
-                        <span>$${formatNumberWithCommas(total, 0)} volume</span>
+                        <span>€${formatNumberWithCommas(totalVolume, 0)} volume</span>
                         <span class="market-status-badge ${statusClass}">${statusText}</span>
                     </div>
                 </div>
             </a>
         `;
     }).join('');
+    } catch (e) {
+        console.error('[DEBUG] Error rendering markets:', e);
+        throw e;
+    }
 }
 
 // ========== ACTIVITY FEED ==========
@@ -917,7 +927,7 @@ function renderMarketDetail(market, prices, blockchainData = {}) {
                     <strong>Status:</strong> 
                     ${isResolved ? `<span class="badge bg-primary">Resolved: ${market.resolution || 'Unknown'}</span>` : '<span class="badge bg-success">Open</span>'}
                 </div>
-                <div class="col-md-4"><strong>Total Volume:</strong> €${formatNumberWithCommas(total, 2)}</div>
+                <div class="col-md-4"><strong>Total Volume:</strong> €${formatNumberWithCommas((market.yes_total || 0) + (market.no_total || 0), 2)}</div>
                 <div class="col-md-4"><strong>Trades:</strong> ${market.bet_count || 0}</div>
             </div>
         </div>
@@ -2521,10 +2531,7 @@ async function loadUserBalance() {
             userBalance = data.balance || 0.0;
             updateBalanceDisplay();
             
-            // Show welcome message for new users
-            if (data.is_new_user) {
-                showMessage(`Welcome! You've been credited with ${formatNumberWithCommas(userBalance, 2)} EURC to start trading!`, 'success', 'tradingMessage');
-            }
+            // Welcome message removed
         }
     } catch (e) {
         console.error('Failed to load balance', e);

@@ -245,6 +245,31 @@
     font-weight: 600;
 }
 
+.chat-market-id {
+    color: #4C9AFF;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.chat-market-item {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: rgba(76, 154, 255, 0.1);
+    border-radius: 8px;
+    border-left: 3px solid #4C9AFF;
+}
+
+.chat-market-item strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+.chat-odds {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
 .chatbot-typing {
     padding: 12px 20px;
     display: flex;

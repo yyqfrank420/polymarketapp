@@ -54,16 +54,26 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                             market['yes_odds'] = None
                             market['no_odds'] = None
                     
-                    # Categorize markets by keywords for AI to use
+                    # Categorize markets by keywords for AI to use (Ireland-focused)
                     question_lower = market['question'].lower()
-                    if 'crypto' in question_lower or 'blockchain' in question_lower:
-                        categories.setdefault('Cryptocurrency', []).append(market)
-                    elif 'ie' in question_lower or 'university' in question_lower or 'school' in question_lower:
-                        categories.setdefault('IE University', []).append(market)
-                    elif 'sport' in question_lower or 'championship' in question_lower:
+                    if 'crypto' in question_lower or 'bitcoin' in question_lower or 'ethereum' in question_lower or 'blockchain' in question_lower or 'btc' in question_lower or 'eth' in question_lower or 'defi' in question_lower or 'nft' in question_lower or 'cryptocurrency' in question_lower:
+                        categories.setdefault('Crypto', []).append(market)
+                    elif 'sport' in question_lower or 'championship' in question_lower or 'six nations' in question_lower or 'fifa' in question_lower or 'world cup' in question_lower or 'ryder cup' in question_lower or 'athletics' in question_lower or 'eurovision' in question_lower:
                         categories.setdefault('Sports', []).append(market)
-                    elif 'politic' in question_lower or 'election' in question_lower:
+                    elif 'politic' in question_lower or 'election' in question_lower or 'government' in question_lower or 'dáil' in question_lower:
                         categories.setdefault('Politics', []).append(market)
+                    elif 'econom' in question_lower or 'housing' in question_lower or 'price' in question_lower or 'gdp' in question_lower:
+                        categories.setdefault('Economics', []).append(market)
+                    elif 'dublin' in question_lower or 'metro' in question_lower or 'infrastructure' in question_lower:
+                        categories.setdefault('Infrastructure', []).append(market)
+                    elif 'renewable' in question_lower or 'climate' in question_lower or 'environment' in question_lower:
+                        categories.setdefault('Environment', []).append(market)
+                    elif 'entertainment' in question_lower or 'music' in question_lower or 'festival' in question_lower:
+                        categories.setdefault('Entertainment', []).append(market)
+                    elif 'education' in question_lower or 'language' in question_lower or 'leaving cert' in question_lower:
+                        categories.setdefault('Education', []).append(market)
+                    elif 'population' in question_lower or 'demographic' in question_lower:
+                        categories.setdefault('Demographics', []).append(market)
                     else:
                         categories.setdefault('Other', []).append(market)
                     
@@ -73,7 +83,8 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
                     "markets": markets,
                     "count": len(markets),
                     "categories": {k: len(v) for k, v in categories.items()},
-                    "message": f"Found {len(markets)} open markets across {len(categories)} categories. Be selective and ask user what they're interested in rather than showing all."
+                    "categorized_markets": {k: [{"id": m["id"], "question": m["question"], "yes_odds": m.get("yes_odds"), "no_odds": m.get("no_odds")} for m in v] for k, v in categories.items()},
+                    "message": f"Found {len(markets)} open markets across {len(categories)} categories: {', '.join(categories.keys())}. CRITICAL: When user asks for a specific category (e.g., 'crypto', 'sports', 'politics'), ONLY show markets from that category. Use the 'categorized_markets' field to filter. NEVER claim a market belongs to a category it doesn't belong to. When showing markets to users, ALWAYS include the Market ID in parentheses like '(Market ID: 1044)' so you can reference it later if they say 'yes' or 'show me odds'."
                 }
                 
                 # Cache the result
@@ -87,9 +98,9 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
             if not isinstance(market_id, int) or market_id <= 0:
                 return {"error": "Invalid market_id"}
             
-            # Check cache first (30 second TTL)
+            # Check cache first (5 second TTL - short to ensure fresh odds after bets)
             cache_key = f"market_odds_{market_id}"
-            cached = _cache.get(cache_key, ttl=30)
+            cached = _cache.get(cache_key, ttl=5)
             if cached:
                 logger.info(f"Returning cached odds for market {market_id}")
                 return cached
@@ -128,14 +139,19 @@ def execute_chatbot_function(function_name, arguments_dict, wallet=None):
             if not validate_amount(amount):
                 return {"error": "Amount must be positive and less than €1,000,000"}
             
-            # Queue bet
-            request_id = queue_bet(market_id, wallet, side, amount)
+            # Queue bet (returns tuple: request_id, queue_position)
+            request_id, queue_position = queue_bet(market_id, wallet, side, amount)
+            
+            # Ensure worker is running
+            from services.bet_service import ensure_worker_running
+            ensure_worker_running()
             
             return {
                 "success": True,
                 "message": f"Trade queued: €{float(amount):.2f} on {side}",
                 "request_id": request_id,
-                "status": "processing"
+                "queue_position": queue_position,
+                "status": "processing" if queue_position == 0 else "queued"
             }
         
         elif function_name == "get_user_bets":

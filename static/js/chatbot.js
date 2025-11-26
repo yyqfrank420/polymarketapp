@@ -7,8 +7,9 @@ function initChatbot() {
     // Ensure chatbot starts closed
     chatOpen = false;
     
-    // Load thread ID from localStorage
-    chatThreadId = localStorage.getItem('chatbot_thread_id');
+    // Clear thread ID on refresh - start fresh conversation each time
+    chatThreadId = null;
+    localStorage.removeItem('chatbot_thread_id');
     
     // Create chatbot HTML
     createChatbotUI();
@@ -212,11 +213,24 @@ async function sendMessage() {
                             }
                         }
                         
+                        // Handle bet metadata (sent separately from chunks)
+                        if (data.bet_metadata && data.bet_metadata.bet_placed) {
+                            const { request_id, market_id, amount, side } = data.bet_metadata;
+                            // Poll for bet completion and refresh UI
+                            pollChatbotBetStatus(request_id, market_id, amount, side);
+                        }
+                        
                         if (data.done && assistantMessageElement && fullResponse) {
                             // Format final message with markdown
                             const contentDiv = assistantMessageElement.querySelector('.chatbot-message-content');
                             if (contentDiv) {
                                 contentDiv.innerHTML = formatMessage(fullResponse);
+                            }
+                            
+                            // Check for bet metadata in final message
+                            if (data.bet_metadata && data.bet_metadata.bet_placed) {
+                                const { request_id, market_id, amount, side } = data.bet_metadata;
+                                pollChatbotBetStatus(request_id, market_id, amount, side);
                             }
                         }
                     } catch (e) {
@@ -275,19 +289,25 @@ function addMessageStreaming(role) {
 }
 
 function formatMessage(content) {
+    if (!content) return '';
+    
     // First escape HTML to prevent XSS
     const escapeDiv = document.createElement('div');
     escapeDiv.textContent = content;
     let escaped = escapeDiv.innerHTML;
     
-    // Convert **bold** to <strong> (do this before line breaks)
+    // Convert **bold** to <strong>
     escaped = escaped.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
     
-    // Convert line breaks to <br>
-    escaped = escaped.replace(/\n\n/g, '<br><br>');
+    // Convert line breaks to <br> (handle multiple line breaks)
+    escaped = escaped.replace(/\n\n+/g, '<br><br>');
     escaped = escaped.replace(/\n/g, '<br>');
     
-    // Convert numbered lists (must be after line breaks)
+    // Convert bullet lists (- or •)
+    escaped = escaped.replace(/<br>-\s+([^<]+)/g, '<br>• $1');
+    escaped = escaped.replace(/<br>•\s+([^<]+)/g, '<br>• $1');
+    
+    // Convert numbered lists (1. 2. 3.)
     escaped = escaped.replace(/(\d+)\.\s+\*\*([^<]+)<\/strong>/g, 
         '<div class="chat-list-item"><span class="chat-list-number">$1.</span> <strong>$2</strong></div>');
     escaped = escaped.replace(/(\d+)\.\s+([^<\n]+)/g, 
@@ -296,8 +316,13 @@ function formatMessage(content) {
     // Convert URLs to links
     escaped = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="chat-link">$1</a>');
     
-    // Highlight percentages
+    // Highlight percentages and Market IDs
     escaped = escaped.replace(/(\d+)%/g, '<span class="chat-percentage">$1%</span>');
+    escaped = escaped.replace(/\(Market ID:\s*(\d+)\)/gi, '<span class="chat-market-id">(Market ID: $1)</span>');
+    
+    // Format market listings better
+    escaped = escaped.replace(/<br>-\s+\*\*([^<]+)\*\*\s+-\s+YES:\s+([^%]+)%\s+\|\s+NO:\s+([^%]+)%/g, 
+        '<br><div class="chat-market-item"><strong>$1</strong><br><span class="chat-odds">YES: <span class="chat-percentage">$2%</span> | NO: <span class="chat-percentage">$3%</span></span></div>');
     
     return escaped;
 }
@@ -313,6 +338,109 @@ function showTyping(show) {
     if (typing) {
         typing.style.display = show ? 'flex' : 'none';
     }
+}
+
+// Poll for bet completion when placed through chatbot
+async function pollChatbotBetStatus(requestId, marketId, amount, side) {
+    const maxAttempts = 30; // 30 seconds max
+    let attempts = 0;
+    
+    const poll = async () => {
+        try {
+            const res = await fetch(`/api/bets/${requestId}/status`);
+            const data = await res.json();
+            
+            if (data.success !== undefined && data.status !== 'processing') {
+                // Bet completed - refresh UI
+                if (data.success) {
+                    console.log('Chatbot bet completed, refreshing UI...', { marketId, currentPage: window.location.pathname });
+                    
+                    // Refresh wallet balance
+                    if (typeof loadUserBalance === 'function') {
+                        await loadUserBalance();
+                    }
+                    
+                    // Refresh market detail page if we're on it
+                    // Check if we're viewing the market detail page for the market we just bet on
+                    if (typeof loadMarketDetail === 'function' && window.MARKET_ID) {
+                        const currentMarketId = parseInt(window.MARKET_ID, 10);
+                        const betMarketId = parseInt(marketId, 10);
+                        if (currentMarketId === betMarketId) {
+                            console.log('Refreshing market detail page for MARKET_ID:', window.MARKET_ID);
+                            // Force refresh by clearing any cached prices
+                            if (typeof currentPrices !== 'undefined') {
+                                currentPrices = null;
+                            }
+                            await loadMarketDetail();
+                            
+                            // Trigger glow animation on the odds button for the side that was bet on
+                            setTimeout(() => {
+                                const glowClass = side === 'YES' ? 'bet-complete-glow-yes' : 'bet-complete-glow-no';
+                                const oddsBtn = side === 'YES' ? document.getElementById('yesOddsBtn') : document.getElementById('noOddsBtn');
+                                if (oddsBtn) {
+                                    oddsBtn.classList.add(glowClass);
+                                    // Remove class after animation completes
+                                    setTimeout(() => {
+                                        oddsBtn.classList.remove(glowClass);
+                                    }, 1500);
+                                }
+                            }, 100); // Small delay to ensure DOM is updated
+                            
+                            // Also force update trade preview to reflect new prices
+                            if (typeof updateTradePreview === 'function') {
+                                updateTradePreview();
+                            }
+                        } else {
+                            console.log('Not refreshing market detail - bet on market', betMarketId, 'but viewing market', currentMarketId);
+                        }
+                    }
+                    
+                    // Always refresh home markets (to update prices in market list)
+                    if (typeof loadHomeMarkets === 'function') {
+                        console.log('Refreshing home markets list');
+                        await loadHomeMarkets();
+                        
+                        // Trigger glow animation on the market card for the side that was bet on
+                        setTimeout(() => {
+                            const marketCard = document.querySelector(`.market-card[href="/market/${marketId}"]`);
+                            if (marketCard) {
+                                const glowClass = side === 'YES' ? 'bet-complete-glow-yes' : 'bet-complete-glow-no';
+                                const oddsBtn = marketCard.querySelector(side === 'YES' ? '.odds-yes' : '.odds-no');
+                                if (oddsBtn) {
+                                    oddsBtn.classList.add(glowClass);
+                                    // Remove class after animation completes
+                                    setTimeout(() => {
+                                        oddsBtn.classList.remove(glowClass);
+                                    }, 1500);
+                                }
+                            }
+                        }, 100); // Small delay to ensure DOM is updated
+                    }
+                    
+                    // Refresh user bets (if on my-bets page)
+                    if (typeof loadUserBets === 'function') {
+                        await loadUserBets();
+                    }
+                    
+                    console.log('UI refresh complete');
+                }
+                return;
+            }
+            
+            attempts++;
+            if (attempts < maxAttempts) {
+                setTimeout(poll, 1000); // Poll every second
+            }
+        } catch (e) {
+            console.error('Error polling chatbot bet status', e);
+            attempts++;
+            if (attempts < maxAttempts) {
+                setTimeout(poll, 1000);
+            }
+        }
+    };
+    
+    poll();
 }
 
 // Initialize when DOM is ready

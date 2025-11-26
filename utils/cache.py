@@ -27,6 +27,12 @@ class SimpleCache:
         with self._lock:
             self._cache[key] = (value, time.time())
     
+    def delete(self, key: str):
+        """Delete a specific cache key"""
+        with self._lock:
+            if key in self._cache:
+                del self._cache[key]
+    
     def clear(self):
         """Clear all cache"""
         with self._lock:
