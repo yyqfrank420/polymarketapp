@@ -1,6 +1,6 @@
 ## Deployment Playbook
 
-This repo already contains everything needed to deploy new markets on Sepolia while hosting the Flask UI on PythonAnywhere. Follow this checklist when moving from local dev to “live”.
+This repo already contains everything needed to deploy new markets on Sepolia while hosting the Flask UI on PythonAnywhere. Follow this checklist when moving from local dev to "live".
 
 ---
 
@@ -63,7 +63,7 @@ CONTRACT_METADATA_PATH=/home/<user>/polymarketapp/deployed/sepolia-latest.json
    pip install web3 eth-account
    ```
 2. **Database** – upload `polymarket.db` to the same directory. Free accounts run a single worker, so SQLite is safe.
-3. **Secrets** – create `~/polymarketapp/.env` with the values listed above. Load it inside `wsgi.py` or via the PythonAnywhere “Environment variables” section.
+3. **Secrets** – create `~/polymarketapp/.env` with the values listed above. Load it inside `wsgi.py` or via the PythonAnywhere "Environment variables" section.
 4. **Web app config**
    - Web framework: manual (use the generated WSGI file).
    - Virtualenv: `/home/<user>/polymarketapp/.venv`.
@@ -99,4 +99,3 @@ With the pieces above in place, deploying a new version is literally:
 3. Reload the web app.
 
 Everything else (keys, metadata, networking) stays encoded in config instead of tribal knowledge.
-

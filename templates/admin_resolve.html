@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resolve Markets - Futura Admin</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-mode">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold" href="/admin">
+                <span class="brand-icon">📊</span> Futura Admin
+            </a>
+            <div class="ms-auto d-flex gap-2">
+                <a href="/admin" class="btn btn-outline-light btn-sm">Back to Dashboard</a>
+                <button onclick="adminLogout()" class="btn btn-outline-danger btn-sm">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Resolve Markets Section -->
+    <section class="admin-section">
+        <div class="container">
+            <h1 class="mb-4">Resolve Markets</h1>
+            
+            <div class="alert alert-info">
+                <strong>📝 Note:</strong> Resolving a market will finalize all bets and calculate payouts. This action cannot be undone.
+            </div>
+
+            <div id="adminMarketsList"></div>
+        </div>
+    </section>
+
+    <!-- Payout Details Modal -->
+    <div class="modal fade" id="payoutModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Payout Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="payoutModalBody">
+                    <!-- Dynamic content -->
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer-dark">
+        <div class="container">
+            <div class="row">
+                <div class="col-12 text-center text-muted small">
+                    © 2025 Futura Admin Panel
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <script>
+        async function adminLogout() {
+            try {
+                await fetch('/api/admin/logout', { method: 'POST' });
+                window.location.href = '/admin/login';
+            } catch (e) {
+                window.location.href = '/admin/login';
+            }
+        }
+        
+        // Check for auth_required errors on API calls
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const response = await originalFetch.apply(this, args);
+            const clone = response.clone();
+            try {
+                const data = await clone.json();
+                if (data.auth_required) {
+                    window.location.href = '/admin/login';
+                    return response;
+                }
+            } catch (e) {}
+            return response;
+        };
+    </script>
+</body>
+</html>
+

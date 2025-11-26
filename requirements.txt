@@ -1,0 +1,12 @@
+Flask==3.0.0
+Werkzeug==3.0.1
+flask-limiter
+Pillow>=10.0.0
+openai==1.3.0
+tavily-python==0.3.0
+tiktoken
+web3==6.11.0
+flask-cors==4.0.0
+# Optional: signature verification for MetaMask logins (future)
+# eth-account==0.9.0
+python-dotenv

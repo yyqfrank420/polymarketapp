@@ -1,9 +1,8 @@
 {
   "network": "sepolia",
   "contractName": "PredictionMarket",
-  "address": "0x0000000000000000000000000000000000000000",
-  "deployer": "0x0000000000000000000000000000000000000000",
-  "deployedAt": "1970-01-01T00:00:00Z",
+  "address": "0xc46929bc3777fa8acd006dafe64437cae0f2b9b9",
+  "deployer": "0xC46929bc3777FA8aCD006daFE64437CAE0f2b9b9",
+  "deployedAt": "2024-11-26T00:00:00Z",
   "artifactPath": "artifacts/contracts/PredictionMarket.sol/PredictionMarket.json"
 }
-
