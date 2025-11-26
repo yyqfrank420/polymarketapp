@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Futura - Prediction Markets</title>
+    
+    <script src="{{ url_for('static', filename='js/age-gate-prefetch.js') }}"></script>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-mode has-responsible-footer">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold" href="/">
+                <span class="brand-icon">📊</span> Futura
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">Markets</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/resolved">Resolved</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/my-bets">Portfolio</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/profile">Profile</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <button id="connectWalletBtn" class="btn btn-wallet">
+                        <span class="wallet-icon">🔗</span> Connect Wallet
+                    </button>
+                    <div id="walletConnectedGroup" style="display: none;" class="d-flex align-items-center gap-2">
+                        <div id="userBalanceDisplay" class="wallet-balance">0 EURC</div>
+                    </div>
+                    <a href="/admin" class="btn btn-admin btn-sm">Admin</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section-dark">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-12 text-center">
+                    <div class="mb-4">
+                        <span style="background: rgba(76, 154, 255, 0.15); padding: 0.5rem 1.5rem; border-radius: 24px; font-size: 0.85rem; font-weight: 700; color: var(--blue-primary); border: 1px solid rgba(76, 154, 255, 0.3);">
+                            🚀 LIVE NOW
+                        </span>
+                    </div>
+                    <h1 class="hero-title-dark mb-4">
+                        Trade on What<br>You Believe In
+                    </h1>
+                    <p class="hero-subtitle-dark mx-auto">
+                        Ireland's most transparent prediction market.<br>
+                        Trade on sports, politics, crypto, and more with real money.
+                    </p>
+                    <div class="hero-stats justify-content-center">
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalVolume">€0</div>
+                            <div class="stat-label">24h Volume</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalMarkets">0</div>
+                            <div class="stat-label">Active Markets</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalTraders">0</div>
+                            <div class="stat-label">Total Traders</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="filter-buttons">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="crypto">Crypto</button>
+                    <button class="filter-btn" data-filter="politics">Politics</button>
+                    <button class="filter-btn" data-filter="sports">Sports</button>
+                    <button class="filter-btn" data-filter="entertainment">Entertainment</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchMarkets" class="form-control search-input" placeholder="Search markets...">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Markets Grid -->
+    <section class="markets-section">
+        <div class="container">
+            <div id="marketsList" class="markets-grid"></div>
+            <div id="marketsLoading" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+            <div id="marketsEmpty" class="empty-state" style="display: none;">
+                <div class="empty-icon">📊</div>
+                <h3>No markets yet</h3>
+                <p>Check back soon for exciting prediction markets!</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Activity Feed -->
+    <section class="activity-feed-section">
+        <div class="container">
+            <div class="activity-feed-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h3 class="activity-feed-title">Live Activity</h3>
+                    <span class="activity-status">
+                        <span class="status-indicator"></span>
+                        Live
+                    </span>
+                </div>
+            </div>
+            <div class="activity-feed" id="activityFeed">
+                <!-- Populated by JS -->
+                <div class="text-center text-muted py-5">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    Loading activity...
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Age Gate Modal -->
+    <div id="AgeJurisdictionGate" class="age-gate-modal" aria-hidden="true" role="dialog" aria-labelledby="ageGateTitle">
+        <div class="age-gate-card">
+            <h2 id="ageGateTitle">Age and Jurisdiction Confirmation</h2>
+            <p class="age-gate-description">Please confirm you meet the legal requirements to trade on this platform.</p>
+            <form id="ageGateForm" novalidate>
+                <label class="age-gate-checkbox">
+                    <input type="checkbox" required>
+                    <span>I am a legal adult aged 18 or above.</span>
+                </label>
+                <label class="age-gate-checkbox">
+                    <input type="checkbox" required>
+                    <span>I am accessing this platform from Ireland or another permitted jurisdiction.</span>
+                </label>
+                <label class="age-gate-checkbox age-gate-checkbox-small">
+                    <input type="checkbox" required>
+                    <span>I understand this platform offers real-money event trading products which may be classified as gambling and/or financial derivatives under Irish and EU law.</span>
+                </label>
+                <div class="age-gate-error" id="ageGateError" role="alert"></div>
+                <button type="submit" class="btn btn-primary w-100">Continue</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="cookieConsentBanner" class="cookie-consent-banner cookie-consent-hidden" role="dialog" aria-live="polite">
+        <p class="cookie-consent-text">This site uses cookies for secure login, analytics, and regulatory compliance. By continuing, you consent to processing under GDPR.</p>
+        <div class="cookie-consent-actions">
+            <button type="button" class="btn btn-primary" id="cookieAcceptBtn">Accept</button>
+            <button type="button" class="btn btn-manage" id="cookieManageBtn">Manage Cookies</button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer-dark">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <h5 class="fw-bold mb-3">Futura</h5>
+                    <p class="text-muted small">Ireland's most transparent prediction market platform.</p>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <h6 class="fw-bold mb-3">Platform</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="/" class="text-muted small">Markets</a></li>
+                        <li><a href="/my-bets" class="text-muted small">Portfolio</a></li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <h6 class="fw-bold mb-3">Contact</h6>
+                    <p class="text-muted small">
+                        <a href="mailto:hello@futura.com" class="text-muted">hello@futura.com</a>
+                    </p>
+                </div>
+            </div>
+            <div class="row mt-4 pt-4 border-top border-secondary">
+                <div class="col-12 text-center text-muted small">
+                    © 2025 Futura. All rights reserved.
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <div class="ie-responsible-footer" role="contentinfo">
+        <div class="ie-responsible-footer__col">
+            <span class="ie-age-badge">18+</span>
+            <span>Play responsibly. For support visit <a href="https://www.gamblingcare.ie" target="_blank" rel="noreferrer">GamblingCare.ie</a> or call 1800 936 725.</span>
+        </div>
+        <div class="ie-responsible-footer__links">
+            <a href="/compliance">Compliance</a>
+            <a href="/gdpr">GDPR Policy</a>
+            <a href="/cookies">Cookies</a>
+        </div>
+    </div>
+    
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Ethers.js for MetaMask integration -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <!-- Chatbot -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+    
+</body>
+</html>

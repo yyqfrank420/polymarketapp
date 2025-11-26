@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market - Futura</title>
+    
+    <script src="{{ url_for('static', filename='js/age-gate-prefetch.js') }}"></script>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-mode has-responsible-footer">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold" href="/">
+                <span class="brand-icon">📊</span> Futura
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Markets</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/resolved">Resolved</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/my-bets">Portfolio</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/profile">Profile</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <button id="connectWalletBtn" class="btn btn-wallet">
+                        <span class="wallet-icon">🔗</span> Connect Wallet
+                    </button>
+                    <div id="walletConnectedGroup" style="display: none;" class="d-flex align-items-center gap-2">
+                        <div id="userBalanceDisplay" class="wallet-balance">0 EURC</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Market Detail -->
+    <section class="market-detail-section" data-market-id="{{ market_id }}">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-8">
+                    <!-- Market Info -->
+                    <div id="marketDetailInfo" class="market-detail-card">
+                        <!-- Loaded by JS -->
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <!-- Trading Card -->
+                    <div class="trading-card sticky-top">
+                        <h5 class="mb-3">Trade</h5>
+                        
+                        <div class="odds-display mb-4" id="oddsDisplay">
+                            <!-- Loaded by JS -->
+                        </div>
+
+                        <!-- Side Selection -->
+                        <div class="d-grid gap-2 mb-3">
+                            <button class="btn btn-yes side-select-btn" id="selectYesBtn" style="border-radius: 6px;">
+                                Buy Yes
+                            </button>
+                            <button class="btn btn-no side-select-btn" id="selectNoBtn" style="border-radius: 6px;">
+                                Buy No
+                            </button>
+                        </div>
+
+                        <!-- Amount Input (shown after side selection) -->
+                        <div class="mb-3" id="amountSection" style="display: none;">
+                            <label class="form-label" style="font-size: 0.85rem; font-weight: 600;">Amount</label>
+                            <div class="input-with-prefix">
+                                <span class="input-prefix">€</span>
+                                <input 
+                                    type="number" 
+                                    class="form-control" 
+                                    id="betAmountInput" 
+                                    placeholder="0.00" 
+                                    step="0.01" 
+                                    min="0"
+                                    style="font-size: 1.1rem; padding-left: 2rem;"
+                                >
+                            </div>
+                            <small class="text-muted" style="font-size: 0.75rem;">Balance: <span id="userBalance">€0.00</span></small>
+                        </div>
+
+                        <!-- Preview Section -->
+                        <div class="trade-preview mb-3" id="tradePreview" style="display: none;">
+                            <div class="preview-row">
+                                <span class="preview-label">If you win</span>
+                                <span class="preview-value preview-win">
+                                    <span id="previewWinAmount" class="preview-win-amount">—</span>
+                                    <span id="previewWinProfit" class="preview-win-profit">—</span>
+                                </span>
+                            </div>
+                            <div class="preview-row" id="previewAfterFeeRow" style="display: none;">
+                                <span class="preview-label"></span>
+                                <span class="preview-value" id="previewAfterFee" style="color: var(--text-secondary); font-size: 0.9rem;">—</span>
+                            </div>
+                            <div class="preview-row">
+                                <span class="preview-label">You'll get:</span>
+                                <span class="preview-value" id="previewShares">—</span>
+                            </div>
+                        </div>
+
+                        <!-- Risk Confirmation Checkbox -->
+                        <div class="mb-3" id="riskConfirmationSection" style="display: none;">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="riskConfirmationCheckbox" required>
+                                <label class="form-check-label" for="riskConfirmationCheckbox" style="font-size: 0.875rem;">
+                                    I understand that trading real-money event contracts involves financial risk.
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Action Button -->
+                        <button class="btn btn-primary w-100" id="buyButton" style="display: none; border-radius: 6px; padding: 1rem;" disabled>
+                            Place Trade
+                        </button>
+
+                        <div id="tradingMessage"></div>
+                    </div>
+                    
+                    <div class="ie-regulatory-disclosure">
+                        <h6>Irish Regulatory Disclosure</h6>
+                        <p>This event market constitutes a real-money forecasting contract. It may be classified as gambling under the Betting (Amendment) Act 2015 or as a derivative contract under EU MiFID II, depending on structure.</p>
+                        <p>Trading involves financial risk.</p>
+                        <p class="ie-regulatory-disclosure__note">Ensure you understand the risks before trading.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Activity Feed -->
+    <section class="activity-feed-section">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="activity-feed-title">Live Activity</h3>
+                <span class="activity-status">
+                    <span class="status-indicator"></span>
+                    Live
+                </span>
+            </div>
+            <div class="activity-feed" id="activityFeed">
+                <!-- Populated by JS -->
+                <div class="text-center text-muted py-5">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    Loading activity...
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Age Gate Modal -->
+    <div id="AgeJurisdictionGate" class="age-gate-modal" aria-hidden="true" role="dialog" aria-labelledby="ageGateTitle">
+        <div class="age-gate-card">
+            <h2 id="ageGateTitle">Age and Jurisdiction Confirmation</h2>
+            <p class="age-gate-description">Please confirm you meet the legal requirements to trade on this platform.</p>
+            <form id="ageGateForm" novalidate>
+                <label class="age-gate-checkbox">
+                    <input type="checkbox" required>
+                    <span>I am a legal adult aged 18 or above.</span>
+                </label>
+                <label class="age-gate-checkbox">
+                    <input type="checkbox" required>
+                    <span>I am accessing this platform from Ireland or another permitted jurisdiction.</span>
+                </label>
+                <label class="age-gate-checkbox age-gate-checkbox-small">
+                    <input type="checkbox" required>
+                    <span>I understand this platform offers real-money event trading products which may be classified as gambling and/or financial derivatives under Irish and EU law.</span>
+                </label>
+                <div class="age-gate-error" id="ageGateError" role="alert"></div>
+                <button type="submit" class="btn btn-primary w-100">Continue</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="cookieConsentBanner" class="cookie-consent-banner cookie-consent-hidden" role="dialog" aria-live="polite">
+        <p class="cookie-consent-text">This site uses cookies for secure login, analytics, and regulatory compliance. By continuing, you consent to processing under GDPR.</p>
+        <div class="cookie-consent-actions">
+            <button type="button" class="btn btn-primary" id="cookieAcceptBtn">Accept</button>
+            <button type="button" class="btn btn-manage" id="cookieManageBtn">Manage Cookies</button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer-dark">
+        <div class="container">
+            <div class="row">
+                <div class="col-12 text-center text-muted small">
+                    © 2025 Futura. All rights reserved.
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <div class="ie-responsible-footer" role="contentinfo">
+        <div class="ie-responsible-footer__col">
+            <span class="ie-age-badge">18+</span>
+            <span>Play responsibly. For support visit <a href="https://www.gamblingcare.ie" target="_blank" rel="noreferrer">GamblingCare.ie</a> or call 1800 936 725.</span>
+        </div>
+        <div class="ie-responsible-footer__links">
+            <a href="/compliance">Compliance</a>
+            <a href="/gdpr">GDPR Policy</a>
+            <a href="/cookies">Cookies</a>
+        </div>
+    </div>
+    
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Ethers.js for MetaMask integration -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script>
+        // Extract MARKET_ID from data attribute
+        const section = document.querySelector('.market-detail-section');
+        window.MARKET_ID = section ? parseInt(section.dataset.marketId) : null;
+        console.log('Market detail page loaded, MARKET_ID:', window.MARKET_ID);
+    </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <!-- Chatbot -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+    
+</body>
+</html>

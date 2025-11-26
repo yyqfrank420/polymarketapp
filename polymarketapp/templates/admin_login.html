@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - Futura</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-dark);
+        }
+        .login-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+        .login-subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .login-input {
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            width: 100%;
+            font-size: 1rem;
+        }
+        .login-input:focus {
+            outline: none;
+            border-color: var(--blue-primary);
+            box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
+        }
+        .login-btn {
+            background: var(--blue-primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            width: 100%;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .login-btn:hover {
+            background: #3182ce;
+        }
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .login-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+        .login-error.show {
+            display: block;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 1.5rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link:hover {
+            color: var(--blue-primary);
+        }
+    </style>
+</head>
+<body class="dark-mode">
+    <div class="login-container">
+        <div class="login-card">
+            <h1 class="login-title">Admin Access</h1>
+            <p class="login-subtitle">Enter password to access admin dashboard</p>
+            
+            <div id="loginError" class="login-error"></div>
+            
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="mb-4">
+                    <input 
+                        type="password" 
+                        id="passwordInput" 
+                        class="login-input" 
+                        placeholder="Enter admin password"
+                        autocomplete="current-password"
+                        required
+                    >
+                </div>
+                <button type="submit" id="loginBtn" class="login-btn">
+                    Access Admin
+                </button>
+            </form>
+            
+            <a href="/" class="back-link">← Back to Markets</a>
+        </div>
+    </div>
+    
+    <script>
+        async function handleLogin(e) {
+            e.preventDefault();
+            
+            const password = document.getElementById('passwordInput').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const errorDiv = document.getElementById('loginError');
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Authenticating...';
+            errorDiv.classList.remove('show');
+            
+            try {
+                const res = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok && data.success) {
+                    window.location.href = '/admin';
+                } else {
+                    errorDiv.textContent = data.error || 'Invalid password';
+                    errorDiv.classList.add('show');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Access Admin';
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.classList.add('show');
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Access Admin';
+            }
+        }
+        
+        // Focus password input on load
+        document.getElementById('passwordInput').focus();
+    </script>
+</body>
+</html>
+

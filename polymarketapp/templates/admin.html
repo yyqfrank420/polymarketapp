@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Futura</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-mode">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold" href="/">
+                <span class="brand-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 3V21H21V3H3ZM19 19H5V5H19V19ZM7 7H17V9H7V7ZM7 11H17V13H7V11ZM7 15H13V17H7V15Z" fill="currentColor"/>
+                    </svg>
+                </span> Futura Admin
+            </a>
+            <div class="ms-auto d-flex gap-2">
+                <a href="/" class="btn btn-outline-light btn-sm">Back to Markets</a>
+                <button onclick="adminLogout()" class="btn btn-outline-danger btn-sm">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Admin Dashboard -->
+    <section class="admin-section">
+        <div class="container">
+            <h1 class="mb-4">Admin Dashboard</h1>
+            
+            <div class="row g-4">
+                <!-- Create Market Card -->
+                <div class="col-md-6">
+                    <a href="/admin/create-market" class="admin-card-link">
+                        <div class="admin-card">
+                            <h3>Create New Market</h3>
+                            <p class="admin-card-description">Add a new prediction market</p>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Resolve Markets Card -->
+                <div class="col-md-6">
+                    <a href="/admin/resolve" class="admin-card-link">
+                        <div class="admin-card">
+                            <h3>Resolve Markets</h3>
+                            <p class="admin-card-description">Resolve open markets and view payouts</p>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Credit Users Card -->
+                <div class="col-md-6">
+                    <div class="admin-card" onclick="showCreditModal()" style="cursor: pointer;">
+                        <h3>Credit Users</h3>
+                        <p class="admin-card-description">Add EURC to user wallets</p>
+                    </div>
+                </div>
+
+                <!-- Stats Card -->
+                <div class="col-md-6">
+                    <div class="admin-card">
+                        <h3>Platform Stats</h3>
+                        <div class="stats-grid mt-3">
+                            <div class="stat-item-small">
+                                <div class="stat-value-small" id="adminTotalMarkets">0</div>
+                                <div class="stat-label-small">Markets</div>
+                            </div>
+                            <div class="stat-item-small">
+                                <div class="stat-value-small" id="adminTotalBets">0</div>
+                                <div class="stat-label-small">Bets</div>
+                            </div>
+                            <div class="stat-item-small">
+                                <div class="stat-value-small" id="adminTotalVolume">€0</div>
+                                <div class="stat-label-small">Volume</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Clear Cache & Logout Card -->
+                <div class="col-md-6">
+                    <div class="admin-card" onclick="clearCacheAndLogout()" style="cursor: pointer;">
+                        <h3>Clear Cache & Logout</h3>
+                        <p class="admin-card-description">Clear local data and disconnect wallet</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- User Database Section -->
+            <div class="row mt-5">
+                <div class="col-12">
+                    <div class="admin-card">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="mb-0">User Database</h3>
+                            <button class="btn btn-sm btn-primary" onclick="loadUserDatabase()">Refresh</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Wallet Address</th>
+                                        <th>Auth Status</th>
+                                        <th class="text-end">Balance</th>
+                                        <th class="text-end">Total Bets</th>
+                                        <th class="text-end">Total Bet Amount</th>
+                                        <th class="text-end">Open Positions</th>
+                                        <th>Created</th>
+                                        <th>Last Login</th>
+                                        <th class="text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="userDatabaseTableBody">
+                                    <tr>
+                                        <td colspan="9" class="text-center py-4">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                            Loading users...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KYC Verifications Section -->
+            <div class="row mt-5">
+                <div class="col-12">
+                    <div class="admin-card">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="mb-0">KYC Verifications</h3>
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-primary" onclick="loadKYCDatabase()">Refresh</button>
+                                <button class="btn btn-sm btn-danger" onclick="clearAllKYC()">Clear Table</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Wallet Address</th>
+                                        <th>Status</th>
+                                        <th>Full Name</th>
+                                        <th>Date of Birth</th>
+                                        <th>Expiry Date</th>
+                                        <th>Nationality</th>
+                                        <th>Document Type</th>
+                                        <th>Document Number</th>
+                                        <th>Official Doc</th>
+                                        <th>Submitted</th>
+                                        <th>Verified At</th>
+                                        <th>Notes</th>
+                                        <th class="text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="kycDatabaseTableBody">
+                                    <tr>
+                                        <td colspan="13" class="text-center py-4">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                            Loading KYC verifications...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Activity Feed -->
+    <section class="activity-feed-section">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="activity-feed-title">Live Activity</h3>
+                <span class="activity-status">
+                    <span class="status-indicator"></span>
+                    Live
+                </span>
+            </div>
+            <div class="activity-feed" id="activityFeed">
+                <!-- Populated by JS -->
+                <div class="text-center text-muted py-5">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    Loading activity...
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer-dark">
+        <div class="container">
+            <div class="row">
+                <div class="col-12 text-center text-muted small">
+                    © 2025 Futura Admin Panel
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Credit User Modal -->
+    <div class="modal fade" id="creditUserModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
+                <div class="modal-header" style="border-color: var(--border-color);">
+                    <h5 class="modal-title">Credit User</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Wallet Address</label>
+                        <input type="text" class="form-control" id="creditWalletInput" placeholder="0xc469...b9b9" style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                        <small class="text-muted">Enter the full MetaMask wallet address</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount (EURC)</label>
+                        <input type="number" class="form-control" id="creditAmountInput" placeholder="1000.00" step="0.01" min="0" style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                        <small class="text-muted">Amount of EURC to credit</small>
+                    </div>
+                    <div id="creditMessage"></div>
+                </div>
+                <div class="modal-footer" style="border-color: var(--border-color);">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="creditUser()">Credit EURC</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        function showCreditModal() {
+            const modal = new bootstrap.Modal(document.getElementById('creditUserModal'));
+            modal.show();
+        }
+
+        async function creditUser() {
+            const wallet = document.getElementById('creditWalletInput').value.trim();
+            const amount = parseFloat(document.getElementById('creditAmountInput').value);
+            const messageDiv = document.getElementById('creditMessage');
+
+            if (!wallet || !wallet.startsWith('0x')) {
+                messageDiv.innerHTML = '<div class="alert alert-danger">Please enter a valid wallet address (starts with 0x)</div>';
+                return;
+            }
+
+            if (!amount || amount <= 0) {
+                messageDiv.innerHTML = '<div class="alert alert-danger">Please enter a valid amount</div>';
+                return;
+            }
+
+            try {
+                messageDiv.innerHTML = '<div class="alert alert-info">Processing...</div>';
+                
+                const res = await fetch(`/api/user/${wallet}/credit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    messageDiv.innerHTML = `<div class="alert alert-success">${data.message}<br>New balance: ${data.new_balance.toFixed(2)} EURC</div>`;
+                    document.getElementById('creditWalletInput').value = '';
+                    document.getElementById('creditAmountInput').value = '';
+                } else {
+                    messageDiv.innerHTML = `<div class="alert alert-danger">${data.error || data.message || 'Failed to credit user'}</div>`;
+                }
+            } catch (e) {
+                messageDiv.innerHTML = '<div class="alert alert-danger">Error crediting user</div>';
+                console.error(e);
+            }
+        }
+        
+        async function adminLogout() {
+            try {
+                await fetch('/api/admin/logout', { method: 'POST' });
+                window.location.href = '/admin/login';
+            } catch (e) {
+                window.location.href = '/admin/login';
+            }
+        }
+        
+        // Check for auth_required errors on API calls
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const response = await originalFetch.apply(this, args);
+            
+            // Clone response to check for auth error
+            const clone = response.clone();
+            try {
+                const data = await clone.json();
+                if (data.auth_required) {
+                    window.location.href = '/admin/login';
+                    return response;
+                }
+            } catch (e) {
+                // Not JSON, ignore
+            }
+            
+            return response;
+        };
+    </script>
+    
+</body>
+</html>
